@@ -1,5 +1,3 @@
-//#include <stddef.h>
-//#include <stdint.h>
 #include "coap_packet.h"
 
 #define COAP_VER(b) (((b)[0] & 0xC0) >> 6)
@@ -11,15 +9,16 @@
 // Validamos el paquete que se recibe
 bool coap_validate(const coap_packet_t *pkt){
     if(pkt->ver != 0x01) return false; // Revisar si el mensaje tiene una ID válida
-    
+    // TODO: Realizar las otras verificaciones  
     return true;
 }
 
-// Definimos la función de parseo
-int coap_parse(const uint8_t *buf, size_t len, coap_packet_t *pkt){
+// Extraemos la información de los paquetes que nos llegan
+int coap_parse(const uint8_t *buffer, size_t len){
     return 0;
 }
 
 int coap_build(const coap_packet_t *pkt, uint8_t *out, size_t *out_len){
+    // Asignar los valores dentro del paquete
     return 0;
 }

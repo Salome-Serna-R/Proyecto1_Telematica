@@ -18,7 +18,7 @@ typedef struct {
     size_t payload_len;
 } coap_packet_t;
 
-int coap_parse(const uint8_t *buf, size_t len, coap_packet_t *pkt);
+int coap_parse(const uint8_t *buffer, size_t len);
 
 int coap_build(const coap_packet_t *pkt, uint8_t *out, size_t *out_len);
 
