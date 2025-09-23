@@ -8,6 +8,13 @@
 #define COAP_CODE(b) ((b)[1])
 #define COAP_MID(b) (((uint16_t)(b)[2] << 8) | (b)[3])
 
+// Validamos el paquete que se recibe
+bool coap_validate(const coap_packet_t *pkt){
+    if(pkt->ver != 0x01) return false; // Revisar si el mensaje tiene una ID válida
+    
+    return true;
+}
+
 // Definimos la función de parseo
 int coap_parse(const uint8_t *buf, size_t len, coap_packet_t *pkt){
     return 0;

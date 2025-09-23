@@ -2,8 +2,10 @@
 #ifndef COAP_PACKET_H
 #define COAP_PACKET_H
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+
 typedef struct {
     uint8_t ver;
     uint8_t type;
@@ -19,5 +21,7 @@ typedef struct {
 int coap_parse(const uint8_t *buf, size_t len, coap_packet_t *pkt);
 
 int coap_build(const coap_packet_t *pkt, uint8_t *out, size_t *out_len);
+
+bool coap_validate(const coap_packet_t *pkt);
 
 #endif
