@@ -55,11 +55,13 @@ int coap_build(const coap_packet_t *paquete, uint8_t *out_buffer, size_t *out_le
 
     // Armar el primer byte (Versión, Tipo, y TKL)
     out_buffer[index++] = ((paquete->ver & 0x03) << 6) | ((paquete->type & 0x03) << 4) | (paquete->token_len & 0x0F);
+    // Tomar los otros parámetros del mensaje.
     out_buffer[index++] = paquete->code;
     out_buffer[index++] = (paquete->message_id >> 8) & 0xFF;
     out_buffer[index++] = paquete->message_id & 0xFF;
 
-    // Códigos del mensaje
+    // Opciones del mensaje
+    //TODO: Hacer eventualmente
 
     // Token
     memcpy(out_buffer + index, paquete->token, paquete->token_len);
