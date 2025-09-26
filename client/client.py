@@ -14,7 +14,7 @@ COAP_TYPE_RST = 3
 
 # Métodos y códigos
 COAP_CODE_GET     = 1
-COAP_CODE_POST    = 2
+# COAP_CODE_POST    = 2 # El cliente de consulta no realiza POSTs
 COAP_CODE_PUT     = 3
 COAP_CODE_DELETE  = 4
 
@@ -58,9 +58,10 @@ def build_coap_packet(code, mid, uri_path=None, payload=None):
 
 def main():
     if len(sys.argv) < 4:
-        print("Uso: python client.py <server_ip> <GET|POST|PUT|DELETE> <uri> [payload]")
-        print("Ejemplo: python client.py 127.0.0.1 GET data/1")
-        print("Ejemplo: python client.py 127.0.0.1 POST data \"25\"")
+        print("Uso: python3 client.py <server_ip> <GET|PUT|DELETE> <uri> [payload]")
+        print("Ejemplo: python3 client.py 127.0.0.1 GET data/1")
+        print("Ejemplo: python3 client.py 127.0.0.1 PUT data/1 \"25\"")
+        print("RECORDATORIO: Este cliente es de consulta, no realiza la operacion POST.")
         sys.exit(1)
 
     server_ip = sys.argv[1]
@@ -70,8 +71,6 @@ def main():
 
     if method == "GET":
         code = COAP_CODE_GET
-    elif method == "POST":
-        code = COAP_CODE_POST
     elif method == "PUT":
         code = COAP_CODE_PUT
     elif method == "DELETE":
@@ -106,7 +105,22 @@ def main():
                 payload = data[i+1:].decode(errors="ignore")
                 print("Payload:", payload)
     except socket.timeout:
-        print("No se recibió respuesta")
+        print("Tiempo de espera agotado, retransmitiendo...")
+        data, _ = sock.recvfrom(1500)
+        print("Respuesta cruda:", data)
+
+        if len(data) >= 4:
+            ver = (data[0] >> 6) & 0x03
+            msg_type = (data[0] >> 4) & 0x03
+            tkl = data[0] & 0x0F
+            code_resp = data[1]
+            mid_resp = (data[2] << 8) | data[3]
+            print(f"Ver={ver} Type={msg_type} Code={code_resp} MID={mid_resp}")
+
+            if 0xFF in data:
+                i = data.index(0xFF)
+                payload = data[i+1:].decode(errors="ignore")
+                print("Payload:", payload)
 
     sock.close()
 
