@@ -8,4 +8,11 @@ Adicionalmente, queríamos desarrollar nuestra propia implementación del protoc
 PENDIENTE
 
 ## Pasos de Compilación
-PENDIENTE
+El servidor se puede compilar con el Makefile ejecutando el comando "make" en una terminal.
+En el caso que esto no funcione, el método clásico también funciona:
+"gcc -o server src/server.c src/coap_packet.c src/storage.c -lpthread"
+
+El cliente de consulta de Python se ejecuta desde la terminal con python o python3
+
+En la carpeta sensor se encuentra el .ino que se debe cargar en el ESP32, adicional de un archivo json que recrea las conexiones en Wokwi de forma rápida.
+

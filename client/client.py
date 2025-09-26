@@ -25,7 +25,7 @@ COAP_CODE_CHANGED = 68   # 2.04
 COAP_CODE_DELETED = 66   # 2.02
 COAP_CODE_BAD_REQ = 128  # 4.00
 
-# Construir paquete CoAP (simplificado)
+# Construir paquete CoAP simple
 def build_coap_packet(code, mid, uri_path=None, payload=None):
     version = 1
     msg_type = COAP_TYPE_CON
@@ -52,10 +52,8 @@ def build_coap_packet(code, mid, uri_path=None, payload=None):
 
     return packet
 
-# -----------------------------
-# Cliente principal
-# -----------------------------
 
+# Cliente principal
 def main():
     if len(sys.argv) < 4:
         print("Uso: python3 client.py <server_ip> <GET|PUT|DELETE> <uri> [payload]")
