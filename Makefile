@@ -1,17 +1,14 @@
 CC = gcc
-CFLAGS = -Waññ -Wextra -02 -g
-LDFLAGS = -lpthread -lsqlite3
+CFLAGS = -Wall -Wextra -O2 -g
+LDFLAGS = -lpthread
 
-SRC = server.c coap_packet.c
+SRC = server.c coap_packet.c storage.c
 OBJ = $(SRC:.c=.o)
 
-all: server test_coap
+all: server
 
 server: $(OBJ)
-	$(CC) $(CFLAGS) -o server $(OBJ) ($LDFLAGS)
-
-test_coap: test_coap.c coap_packet.c
-	$(CC) $(CFLAGS) -o test_coap test_coap.c coap_packet.c
+	$(CC) $(CFLAGS) -o server $(OBJ) $(LDFLAGS)
 
 clean:
-	rm -f *.o server test_coap
+	rm -f *.o server

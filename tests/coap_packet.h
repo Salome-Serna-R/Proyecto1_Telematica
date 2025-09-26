@@ -48,8 +48,8 @@ typedef enum {
 
 int coap_parse(const uint8_t *buffer, size_t len, coap_packet_t *paquete);
 
-int coap_build(const coap_packet_t *pkt, uint8_t *out, size_t *out_len);
+int coap_build(const coap_packet_t *paquete, uint8_t *out_buffer, size_t *out_len, size_t max_len);
 
-bool coap_validate(const coap_packet_t *pkt);
+bool coap_validate(const coap_packet_t *paquete);
 
 #endif
