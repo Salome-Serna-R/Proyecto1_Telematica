@@ -31,6 +31,36 @@ int coap_parse(const uint8_t *buffer, size_t len, coap_packet_t *paquete){
     memcpy(paquete->token, buffer + 4, paquete->token_len); // Copia los datos del buffer al token del paquete que estamos recibiendo.
 
     size_t index = 4 + paquete->token_len;
+    paquete->options_count = 0;
+    uint16_t running_delta = 0;
+    while (index < len && buffer[index] != 0xFF) {
+        uint8_t byte = buffer[index++];
+
+        uint16_t opt_delta = (byte & 0xF0) >> 4;
+        uint16_t opt_len   = (byte & 0x0F);
+
+        // Extensiones (si delta=13 o 14, length=13 o 14 → bytes extra)
+        if (opt_delta == 13) { opt_delta = buffer[index++] + 13; }
+        else if (opt_delta == 14) {
+            opt_delta = ((buffer[index]<<8)|buffer[index+1]) + 269;
+            index+=2;
+        }
+
+        if (opt_len == 13) { opt_len = buffer[index++] + 13; }
+        else if (opt_len == 14) {
+            opt_len = ((buffer[index]<<8)|buffer[index+1]) + 269;
+            index+=2;
+        }
+
+        running_delta += opt_delta;
+
+        coap_option_t *opt = &paquete->options[paquete->options_count++];
+        opt->number = running_delta;
+        opt->length = opt_len;
+        opt->value  = (uint8_t*)(buffer + index);
+
+        index += opt_len;
+    }
     // Buscar el payload del mensaje si hay (el marcador 0xFF)
     size_t payload_start = 0;
     for (size_t i = index; i<len; i++){

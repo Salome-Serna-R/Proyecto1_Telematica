@@ -129,15 +129,92 @@ int storage_get(int id, char *out, size_t max_len) {
     return 0;
 }
 
-// TODO: implementar update y delete igual buscando "id":x
 int storage_update(int id, const char *new_value) {
-    // Ejercicio para Sprint 3: buscar id, reemplazar value y reescribir archivo
-    return 0;
+    char *data = read_file();
+    if (!data) return -1;
+
+    char key[32];
+    snprintf(key, sizeof(key), "\"id\":%d", id);
+
+    char *p = strstr(data, key);
+    if (!p) {
+        free(data);
+        return -2; // no encontrado
+    }
+
+    // Buscar inicio de value
+    char *val = strstr(p, "\"value\":\"");
+    if (!val) {
+        free(data);
+        return -3;
+    }
+    val += 9; // mover después de "value":"
+
+    char *end = strchr(val, '"');
+    if (!end) {
+        free(data);
+        return -4;
+    }
+
+    // Construir nueva cadena
+    char new_data[8192];
+    size_t prefix_len = val - data;
+    strncpy(new_data, data, prefix_len);
+    new_data[prefix_len] = '\0';
+
+    strcat(new_data, new_value);
+    strcat(new_data, end);
+
+    int res = write_file(new_data);
+    free(data);
+    return res;
 }
 
+// Eliminar una entrada
 int storage_delete(int id) {
-    // Ejercicio para Sprint 3: eliminar objeto con id dado del JSON
-    return 0;
+    char *data = read_file();
+    if (!data) return -1;
+
+    char key[32];
+    snprintf(key, sizeof(key), "\"id\":%d", id);
+
+    char *p = strstr(data, key);
+    if (!p) {
+        free(data);
+        return -2; // no encontrado
+    }
+
+    // Buscar inicio del objeto '{'
+    char *start = p;
+    while (start > data && *start != '{') start--;
+
+    // Buscar fin del objeto '}'
+    char *end = strchr(p, '}');
+    if (!end) {
+        free(data);
+        return -3;
+    }
+    end++; // incluir '}'
+
+    // Construir nueva cadena
+    char new_data[8192];
+    size_t prefix_len = start - data;
+    strncpy(new_data, data, prefix_len);
+    new_data[prefix_len] = '\0';
+
+    // Saltar objeto eliminado
+    strcat(new_data, end);
+
+    // Arreglar posibles comas extras
+    for (int i = 0; new_data[i]; i++) {
+        if (new_data[i] == ',' && new_data[i+1] == ']') {
+            memmove(&new_data[i], &new_data[i+1], strlen(&new_data[i+1])+1);
+        }
+    }
+
+    int res = write_file(new_data);
+    free(data);
+    return res;
 }
 
 void storage_close() {

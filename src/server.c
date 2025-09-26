@@ -22,31 +22,48 @@ typedef struct {
     size_t buffer_len;
 } thread_args_t;
 
-// ---------- Funciones de negocio (CRUD simulado) ----------
+
+// Conseguir ID de option
+int coap_get_uri_id(const coap_packet_t *pkt) {
+    for (int i = 0; i < pkt->options_count; i++) {
+        if (pkt->options[i].number == 11) { // Uri-Path
+            // revisar si es número
+            char buf[32];
+            if (pkt->options[i].length < sizeof(buf)) {
+                memcpy(buf, pkt->options[i].value, pkt->options[i].length);
+                buf[pkt->options[i].length] = '\0';
+                // intentar parsear como entero
+                int id = atoi(buf);
+                if (id > 0) return id;
+            }
+        }
+    }
+    return -1; // no encontrado
+}
+
 void handle_get(coap_packet_t *request, coap_packet_t *response) {
-    // Responder con un payload fijo
-    const char *msg = "Valor: 42";
+    int id = coap_get_uri_id(request);
+    if (id < 0) {
+        response->code = COAP_CODE_BAD_REQ;
+        return;
+    }
+
+    char value[128];
+    if (storage_get(id, value, sizeof(value)) == 0) {
+        response->code = COAP_CODE_CONTENT;
+        response->payload = (uint8_t*) value;
+        response->payload_len = strlen(value);
+    } else {
+        response->code = COAP_CODE_BAD_REQ;
+    }
+
     response->ver = 1;
     response->type = COAP_TYPE_ACK;
-    response->code = COAP_CODE_CONTENT;
     response->message_id = request->message_id;
     response->token_len = request->token_len;
     memcpy(response->token, request->token, request->token_len);
-
-    response->payload = (uint8_t*) msg;
-    response->payload_len = strlen(msg);
-
-    char value[128];
-if (storage_get(1, value, sizeof(value)) == 0) { // de momento GET fijo al id=1
-    response->payload = (uint8_t*) value;
-    response->payload_len = strlen(value);
-    response->code = COAP_CODE_CONTENT;
-} else {
-    response->payload = NULL;
-    response->payload_len = 0;
-    response->code = COAP_CODE_BAD_REQ;
 }
-}
+
 
 void handle_post(coap_packet_t *request, coap_packet_t *response) {
     if (request->payload && request->payload_len > 0) {
@@ -56,7 +73,7 @@ void handle_post(coap_packet_t *request, coap_packet_t *response) {
     }
 
     printf("[INFO] POST recibido con payload: %.*s\n",
-           (int)request->payload_len, request->payload);
+        (int)request->payload_len, request->payload);
 
     response->ver = 1;
     response->type = COAP_TYPE_ACK;
@@ -83,6 +100,7 @@ void *handle_client(void *arg) {
     printf("[INFO] Mensaje recibido: Ver=%d Type=%d Code=%d MID=0x%04X\n",
            req.ver, req.type, req.code, req.message_id);
 
+    int uriId = 0; // Inicializar variable del Uri_ID del mensaje
     // Procesar según el código
     switch (req.code) {
         case COAP_CODE_GET:
@@ -90,6 +108,50 @@ void *handle_client(void *arg) {
             break;
         case COAP_CODE_POST:
             handle_post(&req, &resp);
+            break;
+        case COAP_CODE_PUT:
+            uriId = coap_get_uri_id(&req);
+            if (uriId < 0) {
+                resp.code = COAP_CODE_BAD_REQ;
+                break;
+            }
+            if (req.payload && req.payload_len > 0) {
+                char buf[128];
+                snprintf(buf, sizeof(buf), "%.*s", (int)req.payload_len, req.payload);
+                if (storage_update(uriId, buf) == 0) {
+                    resp.code = COAP_CODE_CHANGED;
+                } else {
+                    resp.code = COAP_CODE_BAD_REQ;
+                }
+            } else {
+                resp.code = COAP_CODE_BAD_REQ;
+            }
+            resp.ver = 1;
+            resp.type = COAP_TYPE_ACK;
+            resp.message_id = req.message_id;
+            resp.token_len = req.token_len;
+            memcpy(resp.token, req.token, req.token_len);
+            resp.payload = NULL;
+            resp.payload_len = 0;
+            break;
+        case COAP_CODE_DELETE:
+            uriId = coap_get_uri_id(&req);
+            if (uriId < 0) {
+                resp.code = COAP_CODE_BAD_REQ;
+                break;
+            }
+            if (storage_delete(uriId) == 0) {
+                resp.code = COAP_CODE_DELETED;
+            } else {
+                resp.code = COAP_CODE_BAD_REQ;
+            }
+            resp.ver = 1;
+            resp.type = COAP_TYPE_ACK;
+            resp.message_id = req.message_id;
+            resp.token_len = req.token_len;
+            memcpy(resp.token, req.token, req.token_len);
+            resp.payload = NULL;
+            resp.payload_len = 0;
             break;
         default:
             // Respuesta vacía para códigos no implementados
