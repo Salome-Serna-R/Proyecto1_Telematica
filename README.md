@@ -12,7 +12,11 @@ El servidor se puede compilar con el Makefile ejecutando el comando "make" en un
 En el caso que esto no funcione, el método clásico también funciona:
 "gcc -o server src/server.c src/coap_packet.c src/storage.c -lpthread"
 
-El cliente de consulta de Python se ejecuta desde la terminal con python o python3
+El cliente de consulta de Python se ejecuta desde la terminal con python o python3.
+Si se ejecuta sin parámetros, da un mensaje mostrando ejemplos de uso.
+El cliente se debe ejecutar de la forma: python client.py <IP Servidor> <GET|PUT|DELETE> <uri> [payload]
+Ejemplo GET: python client.py 127.0.0.1 GET data/1
+Ejemplo PUT: python client.py 127.0.0.1 PUT data/1 "25"
 
 En la carpeta sensor se encuentra el .ino que se debe cargar en el ESP32, adicional de un archivo json que recrea las conexiones en Wokwi de forma rápida.
 
