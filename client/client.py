@@ -2,10 +2,6 @@ import socket
 import sys
 import random
 
-# -----------------------------
-# Funciones utilitarias CoAP
-# -----------------------------
-
 # Tipos de mensaje CoAP
 COAP_TYPE_CON = 0
 COAP_TYPE_NON = 1
@@ -59,6 +55,7 @@ def main():
         print("Uso: python3 client.py <server_ip> <GET|PUT|DELETE> <uri> [payload]")
         print("Ejemplo: python3 client.py 127.0.0.1 GET data/1")
         print("Ejemplo: python3 client.py 127.0.0.1 PUT data/1 \"25\"")
+        print("Ejemplo: python3 client.py 127.0.0.1 DELETE data/1")
         print("RECORDATORIO: Este cliente es de consulta, no realiza la operacion POST.")
         sys.exit(1)
 

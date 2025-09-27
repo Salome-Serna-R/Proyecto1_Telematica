@@ -1,8 +1,21 @@
-#include "storage.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "storage.h"
+
+#define MAX_ENTRIES 150
+
+typedef struct {
+    int id;
+    char timestamp[32];
+    char value[128];
+} entry_t;
+
+static entry_t entries[MAX_ENTRIES];
+static int entry_count = 0;
+static int next_id = 1;
+static char filename[256];
 
 // Nombre del archivo global
 static char storage_file[256];

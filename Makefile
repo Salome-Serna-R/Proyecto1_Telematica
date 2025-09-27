@@ -5,10 +5,21 @@ LDFLAGS = -lpthread
 SRC = server.c coap_packet.c storage.c
 OBJ = $(SRC:.c=.o)
 
-all: server
-
 server: $(OBJ)
 	$(CC) $(CFLAGS) -o server $(OBJ) $(LDFLAGS)
+	@echo "Compilación finalizada."
+
+coap_packet.o: src/coap_packet.c include/coap_packet.h
+	$(CC) $(CFLAGS) -c coap_packet.o src/coap_packet.c
+
+storage.o: src/storage.c include/storage.h
+	$(CC) $(CFLAGS) -c storage.o src/storage.c
+
+server.o: src/server.c
+	$(CC) $(CFLAGS) -c server.o src/server.c
 
 clean:
-	rm -f *.o server
+	rm -f *.o
+	@echo "Eliminados archivos de objeto (.o)"
+
+.PHONY: clean 

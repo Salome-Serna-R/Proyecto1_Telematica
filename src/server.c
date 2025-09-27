@@ -1,4 +1,4 @@
-#include <__stdarg_va_list.h>
+//#include <__stdarg_va_list.h> // TODO: eliminar
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,6 +43,10 @@ void message_log(const char *fmt, ...) {
         fprintf(logfile, "[%s]", timestamp);
         vfprintf(logfile, fmt, args);
         fprintf(logfile, "\n");
+        fflush(logfile); // Escritura inmediata
+    }
+    else {
+        printf("[ERROR] No se pudo escribir en el archivo de log."); // Debug
     }
     va_end(args);
 }
@@ -77,7 +81,8 @@ void handle_get(coap_packet_t *request, coap_packet_t *response) {
         response->code = COAP_CODE_CONTENT;
         response->payload = (uint8_t*) value;
         response->payload_len = strlen(value);
-    } else {
+    }
+    else {
         response->code = COAP_CODE_BAD_REQ;
     }
 
@@ -145,10 +150,12 @@ void *handle_client(void *arg) {
                 snprintf(buf, sizeof(buf), "%.*s", (int)req.payload_len, req.payload);
                 if (storage_update(uriId, buf) == 0) {
                     resp.code = COAP_CODE_CHANGED;
-                } else {
+                }
+                else {
                     resp.code = COAP_CODE_BAD_REQ;
                 }
-            } else {
+            }
+            else {
                 resp.code = COAP_CODE_BAD_REQ;
             }
             resp.ver = 1;
@@ -167,7 +174,8 @@ void *handle_client(void *arg) {
             }
             if (storage_delete(uriId) == 0) {
                 resp.code = COAP_CODE_DELETED;
-            } else {
+            }
+            else {
                 resp.code = COAP_CODE_BAD_REQ;
             }
             resp.ver = 1;
@@ -215,6 +223,7 @@ int main(int argc, char *argv[]) {
     }
 
     logfile = fopen(logpath, "a");
+    setvbuf(logfile, NULL, _IONBF, 0); // Abrir el archivo sin buffer
     if (!logfile) {
         perror("fopen log");
         exit(1);
@@ -256,7 +265,8 @@ int main(int argc, char *argv[]) {
             pthread_t tid;
             pthread_create(&tid, NULL, handle_client, args);
             pthread_detach(tid); // liberar thread al terminar
-        } else {
+        }
+        else {
             free(args);
         }
     }
