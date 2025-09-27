@@ -1,17 +1,20 @@
+#include <__stdarg_va_list.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <arpa/inet.h>
+#include <time.h>
 //#include <errno.h>
 
 #include "storage.h"
 #include "coap_packet.h"
 
-// Puerto por defecto de CoAP
-#define SERVER_PORT 5683
+#define SERVER_PORT 5683 // Puerto por defecto de CoAP
 #define MAX_BUF 1500
+FILE *logfile = NULL;
 
 // Estructura para pasar datos al thread
 typedef struct {
@@ -22,6 +25,27 @@ typedef struct {
     size_t buffer_len;
 } thread_args_t;
 
+
+// Hacer log de los mensajes del servidor
+void message_log(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+
+    time_t now = time(NULL);
+    char timestamp[32];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
+    // Escribir también en consola para tener un log en tiempo real de ejecución
+    printf("[%s]", timestamp);
+    vprintf(fmt, args);
+    printf("\n");
+
+    if (logfile) {
+        fprintf(logfile, "[%s]", timestamp);
+        vfprintf(logfile, fmt, args);
+        fprintf(logfile, "\n");
+    }
+    va_end(args);
+}
 
 // Conseguir ID de option
 int coap_get_uri_id(const coap_packet_t *pkt) {
@@ -72,8 +96,9 @@ void handle_post(coap_packet_t *request, coap_packet_t *response) {
         storage_add(buf);
     }
 
-    printf("[INFO] POST recibido con payload: %.*s\n",
+    message_log("[INFO] POST recibido con payload: %.*s\n",
         (int)request->payload_len, request->payload);
+    
 
     response->ver = 1;
     response->type = COAP_TYPE_ACK;
@@ -85,19 +110,19 @@ void handle_post(coap_packet_t *request, coap_packet_t *response) {
     response->payload_len = 0;
 }
 
-// ---------- Thread handler ----------
+// Usa hilos para manejar multiples clientes
 void *handle_client(void *arg) {
     thread_args_t *args = (thread_args_t*) arg;
 
     coap_packet_t req, resp;
     int res = coap_parse(args->buffer, args->buffer_len, &req);
     if (res != 0) {
-        printf("[ERROR] Paquete inválido (código %d)\n", res);
+        message_log("[ERROR] Paquete inválido (código %d)\n", res);
         free(args);
         return NULL;
     }
 
-    printf("[INFO] Mensaje recibido: Ver=%d Type=%d Code=%d MID=0x%04X\n",
+    message_log("[INFO] Mensaje recibido: Ver=%d Type=%d Code=%d MID=0x%04X\n",
            req.ver, req.type, req.code, req.message_id);
 
     int uriId = 0; // Inicializar variable del Uri_ID del mensaje
@@ -178,11 +203,21 @@ void *handle_client(void *arg) {
     return NULL;
 }
 
-// ---------- Main ----------
+// Main
 int main(int argc, char *argv[]) {
-    int port = SERVER_PORT;
+    int port = SERVER_PORT; // Si no se especifica un puerto, utiliza el definido anteriormente
+    const char *logpath = "server.log"; // Si no se especifica un archivo de log, se usa este por defecto
     if (argc > 1) {
         port = atoi(argv[1]);
+    }
+    if (argc > 2) {
+        logpath = argv[2]; // Si se especifica un archivo de log, usar ese
+    }
+
+    logfile = fopen(logpath, "a");
+    if (!logfile) {
+        perror("fopen log");
+        exit(1);
     }
 
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -205,7 +240,7 @@ int main(int argc, char *argv[]) {
 
     storage_init("data.json");
 
-    printf("Servidor CoAP escuchando en puerto %d...\n", port);
+    message_log("Servidor CoAP escuchando en el puerto %d, creando log en %s", port, logpath);
 
     while (1) {
         thread_args_t *args = malloc(sizeof(thread_args_t));
