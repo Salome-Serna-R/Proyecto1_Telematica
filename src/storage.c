@@ -4,15 +4,7 @@
 #include <time.h>
 #include "storage.h"
 
-#define MAX_ENTRIES 150
 
-typedef struct {
-    int id;
-    char timestamp[32];
-    char value[128];
-} entry_t;
-
-static entry_t entries[MAX_ENTRIES];
 static int entry_count = 0;
 static int next_id = 1;
 static char filename[256];
@@ -24,13 +16,13 @@ static char storage_file[256];
 int storage_init(const char *filename) {
     strncpy(storage_file, filename, sizeof(storage_file)-1);
     // Si el archivo no existe, crear con un array vacío
-    FILE *f = fopen(storage_file, "r");
-    if (!f) {
-        f = fopen(storage_file, "w");
-        if (!f) return -1;
-        fprintf(f, "[]");
+    FILE *archivo = fopen(storage_file, "r");
+    if (!archivo) {
+        archivo = fopen(storage_file, "w");
+        if (!archivo) return -1;
+        fprintf(archivo, "[]");
     }
-    fclose(f);
+    fclose(archivo);
     return 0;
 }
 

@@ -19,7 +19,4 @@ int storage_update(int id, const char *new_value);
 // Eliminar un dato por id (DELETE)
 int storage_delete(int id);
 
-// Pasar datos del arreglo al archivo JSON
-static void storage_convert();
-
 #endif

@@ -1,4 +1,9 @@
 # Proyecto 1 Telemática
+Realizado por:
+
+* Miguel Gómez
+* Laura Ortiz
+* Salome Serna
 
 ## Objetivo
 En el presente trabajo queremos desarrollar una aplicación Cliente-Servidor que toma datos reales de un sensor y los alimenta a un servidor que hosteamos en la nube.
