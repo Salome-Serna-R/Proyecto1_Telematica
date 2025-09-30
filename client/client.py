@@ -51,7 +51,7 @@ def build_coap_packet(code, mid, uri_path=None, payload=None):
 
 # Cliente principal
 def main():
-    if len(sys.argv) < 4:
+    if len(sys.argv) < 3:
         print("Uso: python3 client.py <server_ip> <GET|PUT|DELETE> <uri> [payload]")
         print("Ejemplo: python3 client.py 127.0.0.1 GET data/1")
         print("Ejemplo: python3 client.py 127.0.0.1 PUT data/1 \"25\"")

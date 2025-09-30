@@ -150,6 +150,7 @@ void *handle_client(void *arg) {
                 snprintf(buf, sizeof(buf), "%.*s", (int)req.payload_len, req.payload);
                 if (storage_update(uriId, buf) == 0) {
                     resp.code = COAP_CODE_CHANGED;
+                    message_log("[INFO] PUT recibido, se actualizo una entrada con el nuevo payload: %.*s\n", buf);
                 }
                 else {
                     resp.code = COAP_CODE_BAD_REQ;
@@ -223,7 +224,7 @@ int main(int argc, char *argv[]) {
     }
 
     logfile = fopen(logpath, "a");
-    setvbuf(logfile, NULL, _IONBF, 0); // Abrir el archivo sin buffer
+    //setvbuf(logfile, NULL, _IONBF, 0); // Abrir el archivo sin buffer
     if (!logfile) {
         perror("fopen log");
         exit(1);
