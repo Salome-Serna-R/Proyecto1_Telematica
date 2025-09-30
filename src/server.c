@@ -11,6 +11,7 @@
 
 #include "storage.h"
 #include "coap_packet.h"
+#include "log.h"
 
 #define SERVER_PORT 5683 // Puerto por defecto de CoAP
 #define MAX_BUF 1500
@@ -35,9 +36,9 @@ void message_log(const char *fmt, ...) {
     char timestamp[32];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
     // Escribir también en consola para tener un log en tiempo real de ejecución
-    printf("[%s]", timestamp);
+    log_text("[%s]", timestamp);
     vprintf(fmt, args);
-    printf("\n");
+    log_text("\n");
 
     if (logfile) {
         fprintf(logfile, "[%s]", timestamp);
@@ -46,7 +47,7 @@ void message_log(const char *fmt, ...) {
         fflush(logfile); // Escritura inmediata
     }
     else {
-        printf("[ERROR] No se pudo escribir en el archivo de log."); // Debug
+        log_text("[ERROR] No se pudo escribir en el archivo de log."); // Debug
     }
     va_end(args);
 }
@@ -100,11 +101,6 @@ void handle_post(coap_packet_t *request, coap_packet_t *response) {
         snprintf(buf, sizeof(buf), "%.*s", (int)request->payload_len, request->payload);
         storage_add(buf);
     }
-
-    message_log("[INFO] POST recibido con payload: %.*s\n",
-        (int)request->payload_len, request->payload);
-    
-
     response->ver = 1;
     response->type = COAP_TYPE_ACK;
     response->code = COAP_CODE_CREATED;
@@ -122,12 +118,12 @@ void *handle_client(void *arg) {
     coap_packet_t req, resp;
     int res = coap_parse(args->buffer, args->buffer_len, &req);
     if (res != 0) {
-        message_log("[ERROR] Paquete inválido (código %d)\n", res);
+        log_text("[ERROR] Paquete inválido (código %d)\n", res);
         free(args);
         return NULL;
     }
 
-    message_log("[INFO] Mensaje recibido: Ver=%d Type=%d Code=%d MID=0x%04X\n",
+    log_text("[INFO] Mensaje recibido: Ver=%d Type=%d Code=%d MID=0x%04X\n",
            req.ver, req.type, req.code, req.message_id);
 
     int uriId = 0; // Inicializar variable del Uri_ID del mensaje
@@ -150,7 +146,7 @@ void *handle_client(void *arg) {
                 snprintf(buf, sizeof(buf), "%.*s", (int)req.payload_len, req.payload);
                 if (storage_update(uriId, buf) == 0) {
                     resp.code = COAP_CODE_CHANGED;
-                    message_log("[INFO] PUT recibido, se actualizo una entrada con el nuevo payload: %.*s\n", buf);
+                    log_text("[INFO] PUT recibido\n");
                 }
                 else {
                     resp.code = COAP_CODE_BAD_REQ;
@@ -216,11 +212,13 @@ void *handle_client(void *arg) {
 int main(int argc, char *argv[]) {
     int port = SERVER_PORT; // Si no se especifica un puerto, utiliza el definido anteriormente
     const char *logpath = "server.log"; // Si no se especifica un archivo de log, se usa este por defecto
-    if (argc > 1) {
-        port = atoi(argv[1]);
-    }
-    if (argc > 2) {
-        logpath = argv[2]; // Si se especifica un archivo de log, usar ese
+    
+    if (argc > 1) port = atoi(argv[1]);
+    if (argc > 2) logpath = argv[2]; // Si se especifica un archivo de log, usar ese
+
+    if (log_init(logpath) != 0) {
+        perror("log_init");
+        exit(1);
     }
 
     logfile = fopen(logpath, "a");
@@ -250,7 +248,7 @@ int main(int argc, char *argv[]) {
 
     storage_init("data.json");
 
-    message_log("Servidor CoAP escuchando en el puerto %d, creando log en %s", port, logpath);
+    log_text("Servidor CoAP escuchando en el puerto %d, creando log en %s", port, logpath);
 
     while (1) {
         thread_args_t *args = malloc(sizeof(thread_args_t));
