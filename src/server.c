@@ -16,6 +16,7 @@
 #define SERVER_PORT 5683 // Puerto por defecto de CoAP
 #define MAX_BUF 1500
 FILE *logfile = NULL;
+static char response_buffer[256]; // Ayuda a no leer datos basura de memoria
 
 // Estructura para pasar datos al thread
 typedef struct {
@@ -79,9 +80,10 @@ void handle_get(coap_packet_t *request, coap_packet_t *response) {
 
     char value[128];
     if (storage_get(id, value, sizeof(value)) == 0) {
+        snprintf(response_buffer, sizeof(response_buffer), "%s", value);
         response->code = COAP_CODE_CONTENT;
-        response->payload = (uint8_t*) value;
-        response->payload_len = strlen(value);
+        response->payload = (uint8_t*) response_buffer;
+        response->payload_len = strlen(response_buffer);
     }
     else {
         response->code = COAP_CODE_BAD_REQ;
@@ -106,7 +108,9 @@ void handle_post(coap_packet_t *request, coap_packet_t *response) {
     response->code = COAP_CODE_CREATED;
     response->message_id = request->message_id;
     response->token_len = request->token_len;
+    printf("[DEBUG] Si este print se envia, el problema sucede antes de asignar el token.\n");
     memcpy(response->token, request->token, request->token_len);
+    printf("[DEBUG] Si este print se envia, el problema sucede cuando se esta haciendo el payload de la respuesta.\n");
     response->payload = NULL;
     response->payload_len = 0;
 }

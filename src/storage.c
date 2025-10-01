@@ -87,9 +87,10 @@ int storage_add(const char *value) {
         snprintf(data, 256, "[%s]", entry);
     } else {
         data[strlen(data)-1] = '\0'; // quitar ']'
-        strcat(data, ",");
+        strcat(data, ",\n");
+        strcat(data,"\t");
         strcat(data, entry);
-        strcat(data, "]");
+        strcat(data, "\n]");
     }
 
     int response = write_file(data);
