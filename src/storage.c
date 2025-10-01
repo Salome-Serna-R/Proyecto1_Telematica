@@ -1,8 +1,13 @@
-#include "storage.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "storage.h"
+
+
+static int entry_count = 0;
+static int next_id = 1;
+static char filename[256];
 
 // Nombre del archivo global
 static char storage_file[256];
@@ -10,39 +15,38 @@ static char storage_file[256];
 // Inicialización
 int storage_init(const char *filename) {
     strncpy(storage_file, filename, sizeof(storage_file)-1);
-
     // Si el archivo no existe, crear con un array vacío
-    FILE *f = fopen(storage_file, "r");
-    if (!f) {
-        f = fopen(storage_file, "w");
-        if (!f) return -1;
-        fprintf(f, "[]");
+    FILE *archivo = fopen(storage_file, "r");
+    if (!archivo) {
+        archivo = fopen(storage_file, "w");
+        if (!archivo) return -1;
+        fprintf(archivo, "[]");
     }
-    fclose(f);
+    fclose(archivo);
     return 0;
 }
 
 // Función auxiliar: leer todo el archivo en memoria
 static char *read_file() {
-    FILE *f = fopen(storage_file, "r");
-    if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    rewind(f);
+    FILE *archivo = fopen(storage_file, "r+");
+    if (!archivo) return NULL;
+    fseek(archivo, 0, SEEK_END);
+    long len = ftell(archivo);
+    rewind(archivo);
 
     char *buf = malloc(len+1);
-    fread(buf, 1, len, f);
+    fread(buf, 1, len, archivo);
     buf[len] = '\0';
-    fclose(f);
+    fclose(archivo);
     return buf;
 }
 
 // Función auxiliar: sobrescribir archivo
 static int write_file(const char *content) {
-    FILE *f = fopen(storage_file, "w");
-    if (!f) return -1;
-    fputs(content, f);
-    fclose(f);
+    FILE *archivo = fopen(storage_file, "w+");
+    if (!archivo) return -1;
+    fputs(content, archivo);
+    fclose(archivo);
     return 0;
 }
 
@@ -88,9 +92,9 @@ int storage_add(const char *value) {
         strcat(data, "]");
     }
 
-    int res = write_file(data);
+    int response = write_file(data);
     free(data);
-    return res;
+    return response;
 }
 
 // Obtener un valor por id
@@ -165,9 +169,9 @@ int storage_update(int id, const char *new_value) {
     strcat(new_data, new_value);
     strcat(new_data, end);
 
-    int res = write_file(new_data);
+    int response = write_file(new_data);
     free(data);
-    return res;
+    return response;
 }
 
 // Eliminar una entrada
@@ -215,8 +219,4 @@ int storage_delete(int id) {
     int res = write_file(new_data);
     free(data);
     return res;
-}
-
-void storage_close() {
-    // Nada especial para archivos planos
 }
