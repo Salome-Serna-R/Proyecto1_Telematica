@@ -86,8 +86,8 @@ int storage_add(const char *value) {
         // archivo vacío: []
         snprintf(data, 256, "[%s]", entry);
     } else {
-        data[strlen(data)-2] = '\0'; // quitar ']'
-        strcat(data, ",\n");
+        data[strlen(data)-3] = '\0'; // quitar ']' (quita la línea vacía al final, quita el ] y después quita el newline)
+        strcat(data, ",\n");    
         strcat(data,"\t");
         strcat(data, entry);
         strcat(data, "\n]");

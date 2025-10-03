@@ -102,17 +102,15 @@ void handle_post(coap_packet_t *request, coap_packet_t *response) {
         storage_add(buf);
     }
     response->ver = 1;
-    printf("[DEBUG] Se asigno la version del mensaje correctamente a: %d", response->ver);
     response->type = COAP_TYPE_ACK;
     response->code = COAP_CODE_CREATED;
     response->message_id = request->message_id;
     response->token_len = request->token_len;
-    printf("[DEBUG] Si este print se envia, el problema no sucede antes de asignar el token.\n");
     memcpy(response->token, request->token, request->token_len);
-    printf("[DEBUG] Si este print se envia, el problema sucede cuando se esta haciendo el payload de la respuesta.\n");
-    response->payload = NULL;
+    response->payload = 0;
     printf("[DEBUG] Si este print se envia, el problema sucede despues de asignar el payload por algun motivo.\n");
     response->payload_len = 0;
+    printf("[DEBUG] Si este print se envia, el mensaje de respuesta de CoAP fue enviado creado exitosamente.");
 }
 
 // Usa hilos para manejar multiples clientes
