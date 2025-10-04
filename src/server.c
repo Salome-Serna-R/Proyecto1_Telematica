@@ -107,8 +107,9 @@ void handle_post(coap_packet_t *request, coap_packet_t *response) {
     response->message_id = request->message_id;
     response->token_len = request->token_len;
     memcpy(response->token, request->token, request->token_len);
-    response->payload = 0;
-    printf("[DEBUG] Si este print se envia, el problema sucede despues de asignar el payload por algun motivo.\n");
+    printf("[DEBUG] Este print se envia antes de asignar el payload de la respuesta.");
+    /*response->payload = 0;
+    printf("[DEBUG] Si este print se envia, el problema sucede despues de asignar el payload por algun motivo.\n");*/
     response->payload_len = 0;
     printf("[DEBUG] Si este print se envia, el mensaje de respuesta de CoAP fue enviado creado exitosamente.\n");
 }

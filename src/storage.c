@@ -87,7 +87,7 @@ int storage_add(const char *value) {
         snprintf(data, 256, "[\n\t%s\n]", entry);
     }
     else {
-        data[strlen(data)-3] = '\0'; // quitar ']' (quita la línea vacía al final, quita el ] y después quita el newline)
+        data[strlen(data)-2] = '\0'; // quitar ']' (quita la línea vacía al final, quita el ] y después quita el newline)
         strcat(data, ",\n");
         strcat(data,"\t");
         strcat(data, entry);
