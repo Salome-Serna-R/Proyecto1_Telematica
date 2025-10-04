@@ -84,10 +84,11 @@ int storage_add(const char *value) {
     // Insertar en el array
     if (strlen(data) <= 2) {
         // archivo vacío: []
-        snprintf(data, 256, "[%s]", entry);
-    } else {
+        snprintf(data, 256, "[\n\t%s\n]", entry);
+    }
+    else {
         data[strlen(data)-3] = '\0'; // quitar ']' (quita la línea vacía al final, quita el ] y después quita el newline)
-        strcat(data, ",\n");    
+        strcat(data, ",\n");
         strcat(data,"\t");
         strcat(data, entry);
         strcat(data, "\n]");
@@ -111,7 +112,6 @@ int storage_get(int id, char *out, size_t max_len) {
         free(data);
         return -2; // no encontrado
     }
-
     // Buscar "value"
     char *val = strstr(p, "\"value\":\"");
     if (!val) {

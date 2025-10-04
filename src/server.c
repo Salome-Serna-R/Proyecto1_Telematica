@@ -110,7 +110,7 @@ void handle_post(coap_packet_t *request, coap_packet_t *response) {
     response->payload = 0;
     printf("[DEBUG] Si este print se envia, el problema sucede despues de asignar el payload por algun motivo.\n");
     response->payload_len = 0;
-    printf("[DEBUG] Si este print se envia, el mensaje de respuesta de CoAP fue enviado creado exitosamente.");
+    printf("[DEBUG] Si este print se envia, el mensaje de respuesta de CoAP fue enviado creado exitosamente.\n");
 }
 
 // Usa hilos para manejar multiples clientes
@@ -215,7 +215,7 @@ int main(int argc, char *argv[]) {
     int port = SERVER_PORT; // Si no se especifica un puerto, utiliza el definido anteriormente
     const char *logpath = "server.log"; // Si no se especifica un archivo de log, se usa este por defecto
     
-    if (argc > 1) port = atoi(argv[1]);
+    if (argc > 1) port = atoi(argv[1]); // Si se especifica otro puerto, usar ese
     if (argc > 2) logpath = argv[2]; // Si se especifica un archivo de log, usar ese
 
     if (log_init(logpath) != 0) {
