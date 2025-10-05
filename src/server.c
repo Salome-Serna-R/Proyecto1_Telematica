@@ -58,13 +58,20 @@ void message_log(const char *fmt, ...) {
     va_end(args);
 }
 
-// Conseguir ID de option
+// Conseguir ID de option - Con validación de memoria
 int coap_get_uri_id(const coap_packet_t *pkt) {
+    if (!pkt) return -1;
+    
+    // Verificar que el paquete tenga la estructura correcta
+    if (pkt->options_count <= 0 || pkt->options_count > 16) {
+        return -1;
+    }
+    
     for (int i = 0; i < pkt->options_count; i++) {
         if (pkt->options[i].number == 11) { // Uri-Path
-            // revisar si es número
-            char buf[32];
-            if (pkt->options[i].length < sizeof(buf)) {
+            // Validar longitud antes de copiar
+            if (pkt->options[i].length > 0 && pkt->options[i].length < 32) {
+                char buf[32];
                 memcpy(buf, pkt->options[i].value, pkt->options[i].length);
                 buf[pkt->options[i].length] = '\0';
                 // intentar parsear como entero
@@ -156,16 +163,24 @@ void handle_post(coap_packet_t *request, coap_packet_t *response) {
 void *handle_client(void *arg) {
     thread_args_t *args = (thread_args_t*) arg;
     
+    if (!args) {
+        log_text("[ERROR] Argumentos de thread nulos");
+        return NULL;
+    }
+    
     // Incrementar contador de threads activos
     pthread_mutex_lock(&thread_count_mutex);
     active_threads++;
     pthread_mutex_unlock(&thread_count_mutex);
 
+    // Inicializar estructuras de paquetes
     coap_packet_t req, resp;
+    memset(&req, 0, sizeof(coap_packet_t));
+    memset(&resp, 0, sizeof(coap_packet_t));
+    
     int res = coap_parse(args->buffer, args->buffer_len, &req);
     if (res != 0) {
         log_text("[ERROR] Paquete inválido (código %d)", res);
-        free(args);
         goto cleanup;
     }
 
@@ -324,6 +339,9 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
+        // Inicializar estructura para evitar datos basura
+        memset(args, 0, sizeof(thread_args_t));
+        
         args->sock = sock;
         args->client_len = sizeof(args->client_addr);
         args->buffer_len = recvfrom(sock, args->buffer, MAX_BUF, 0,
@@ -331,6 +349,13 @@ int main(int argc, char *argv[]) {
                                     &args->client_len);
 
         if (args->buffer_len > 0) {
+            // Validar tamaño del buffer para prevenir overflow
+            if (args->buffer_len > MAX_BUF) {
+                log_text("[ERROR] Buffer demasiado grande: %zu bytes", args->buffer_len);
+                free(args);
+                continue;
+            }
+            
             pthread_t tid;
             int result = pthread_create(&tid, NULL, handle_client, args);
             if (result != 0) {
