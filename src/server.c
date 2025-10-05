@@ -13,114 +13,94 @@
 #include "coap_packet.h"
 #include "log.h"
 
-// === CONSTANTES DEL SERVIDOR ===
-#define DEFAULT_SERVER_PORT 5683
-#define MAX_BUFFER_SIZE 1500
-#define MAX_CONCURRENT_THREADS 100
-#define THREAD_TIMEOUT_SECONDS 30
-#define MAX_PAYLOAD_SIZE 100
-#define MAX_URI_LENGTH 32
+#define SERVER_PORT 5683   // Puerto por defecto de CoAP
+#define MAX_BUF 1500
+#define MAX_THREADS 100    // Límite de threads concurrentes
+#define THREAD_TIMEOUT 30  // Timeout en segundos para threads
 
-// === VARIABLES GLOBALES ===
-static int activeThreadCount = 0;
-static pthread_mutex_t threadCountMutex = PTHREAD_MUTEX_INITIALIZER;
-static FILE* serverLogFile = NULL;
+static int active_threads = 0;
+static pthread_mutex_t thread_count_mutex = PTHREAD_MUTEX_INITIALIZER;
+FILE *logfile = NULL;
 
-// === ESTRUCTURAS DE DATOS ===
+// Estructura para pasar datos al thread
 typedef struct {
-    int socketFd;
-    struct sockaddr_in clientAddress;
-    socklen_t clientAddressLength;
-    uint8_t receivedBuffer[MAX_BUFFER_SIZE];
-    size_t receivedBufferLength;
+    int sock;
+    struct sockaddr_in client_addr;
+    socklen_t client_len;
+    uint8_t buffer[MAX_BUF];
+    size_t buffer_len;
 } thread_args_t;
 
+// Hacer log de los mensajes del servidor
+void message_log(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    time_t now = time(NULL);
+    char timestamp[32];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
 
-// === FUNCIONES DE LOGGING ===
-/**
- * Registra un mensaje en el log del servidor con timestamp
- * @param formatString Formato del mensaje (como printf)
- * @param ... Argumentos para el formato
- */
-void logServerMessage(const char* formatString, ...) {
-    va_list argumentList;
-    va_start(argumentList, formatString);
-
-    time_t currentTime = time(NULL);
-    char timestampBuffer[32];
-    strftime(timestampBuffer, sizeof(timestampBuffer), "%Y-%m-%d %H:%M:%S", localtime(&currentTime));
-    
-    // Escribir en consola para monitoreo en tiempo real
-    log_text("[%s]", timestampBuffer);
-    vprintf(formatString, argumentList);
+    log_text("[%s]", timestamp);
+    vprintf(fmt, args);
     log_text("\n");
 
-    // Escribir en archivo de log si está disponible
-    if (serverLogFile) {
-        fprintf(serverLogFile, "[%s]", timestampBuffer);
-        vfprintf(serverLogFile, formatString, argumentList);
-        fprintf(serverLogFile, "\n");
-        fflush(serverLogFile); // Escritura inmediata para debugging
+    if (logfile) {
+        fprintf(logfile, "[%s]", timestamp);
+        vfprintf(logfile, fmt, args);
+        fprintf(logfile, "\n");
+        fflush(logfile);
     } else {
-        log_text("[ERROR] No se pudo escribir en el archivo de log del servidor.");
+        log_text("[ERROR] No se pudo escribir en el archivo de log.");
     }
-    
-    va_end(argumentList);
+    va_end(args);
 }
 
-// Conseguir ID de option
+// Conseguir ID de option - Con validación de memoria
 int coap_get_uri_id(const coap_packet_t *pkt) {
+    if (!pkt) return -1;
+
+    if (pkt->options_count <= 0 || pkt->options_count > 16) {
+        return -1;
+    }
+
     for (int i = 0; i < pkt->options_count; i++) {
         if (pkt->options[i].number == 11) { // Uri-Path
-            // revisar si es número
-            char buf[32];
-            if (pkt->options[i].length < sizeof(buf)) {
+            if (pkt->options[i].length > 0 && pkt->options[i].length < 32) {
+                char buf[32];
                 memcpy(buf, pkt->options[i].value, pkt->options[i].length);
                 buf[pkt->options[i].length] = '\0';
-                // intentar parsear como entero
                 int id = atoi(buf);
                 if (id > 0) return id;
             }
         }
     }
-    return -1; // no encontrado
+    return -1;
 }
 
-// === MANEJADORES DE REQUESTS ===
-/**
- * Maneja requests GET para recuperar datos de sensores
- * @param request Paquete CoAP de request
- * @param response Paquete CoAP de response (se modifica)
- */
-void handleGetRequest(const coap_packet_t* request, coap_packet_t* response) {
-    if (!request || !response) {
-        return;
-    }
-    
-    int sensorId = extractSensorIdFromUri(request);
-    if (sensorId < 0) {
-        logServerMessage("[ERROR] GET: ID de sensor inválido");
+void handle_get(coap_packet_t *request, coap_packet_t *response) {
+    if (!request || !response) return;
+
+    int id = coap_get_uri_id(request);
+    if (id < 0) {
+        log_text("[ERROR] GET: ID inválido");
         response->code = COAP_CODE_BAD_REQ;
         return;
     }
 
-    char sensorData[128];
-    int storageResult = storage_get(sensorId, sensorData, sizeof(sensorData));
-    
-    if (storageResult == 0) {
+    char value[128];
+    int result = storage_get(id, value, sizeof(value));
+    if (result == 0) {
         response->code = COAP_CODE_CONTENT;
-        response->payload = (uint8_t*) sensorData;
-        response->payload_len = strlen(sensorData);
-        logServerMessage("[INFO] GET: Datos recuperados para sensor ID %d", sensorId);
-    } else if (storageResult == -2) {
-        logServerMessage("[WARNING] GET: Sensor ID %d no encontrado", sensorId);
+        response->payload = (uint8_t*) value;
+        response->payload_len = strlen(value);
+        log_text("[INFO] GET: Datos recuperados para ID %d", id);
+    } else if (result == -2) {
+        log_text("[WARNING] GET: ID %d no encontrado", id);
         response->code = COAP_CODE_BAD_REQ;
     } else {
-        logServerMessage("[ERROR] GET: Error interno al recuperar sensor ID %d", sensorId);
+        log_text("[ERROR] GET: Error interno al recuperar ID %d", id);
         response->code = COAP_CODE_BAD_REQ;
     }
 
-    // Configurar respuesta CoAP
     response->ver = 1;
     response->type = COAP_TYPE_ACK;
     response->message_id = request->message_id;
@@ -128,51 +108,39 @@ void handleGetRequest(const coap_packet_t* request, coap_packet_t* response) {
     memcpy(response->token, request->token, request->token_len);
 }
 
+void handle_post(coap_packet_t *request, coap_packet_t *response) {
+    if (!request || !response) return;
 
-/**
- * Maneja requests POST para agregar nuevos datos de sensores
- * @param request Paquete CoAP de request
- * @param response Paquete CoAP de response (se modifica)
- */
-void handlePostRequest(const coap_packet_t* request, coap_packet_t* response) {
-    if (!request || !response) {
-        return;
-    }
-    
     if (request->payload && request->payload_len > 0) {
-        // Validar tamaño del payload para prevenir overflow
-        if (request->payload_len > MAX_PAYLOAD_SIZE) {
-            logServerMessage("[ERROR] POST: Payload demasiado grande (%zu bytes)", request->payload_len);
+        if (request->payload_len > 100) {
+            log_text("[ERROR] POST: Payload demasiado grande (%zu bytes)", request->payload_len);
             response->code = COAP_CODE_BAD_REQ;
             return;
         }
-        
-        char payloadBuffer[128];
-        int formattedLength = snprintf(payloadBuffer, sizeof(payloadBuffer), "%.*s", 
-                                      (int)request->payload_len, request->payload);
-        
-        if (formattedLength >= sizeof(payloadBuffer)) {
-            logServerMessage("[ERROR] POST: Buffer overflow en payload");
+
+        char buf[128];
+        int len = snprintf(buf, sizeof(buf), "%.*s", (int)request->payload_len, request->payload);
+        if (len >= sizeof(buf)) {
+            log_text("[ERROR] POST: Buffer overflow en payload");
             response->code = COAP_CODE_BAD_REQ;
             return;
         }
-        
-        int storageResult = storage_add(payloadBuffer);
-        if (storageResult == 0) {
-            logServerMessage("[INFO] POST: Datos de sensor agregados exitosamente");
+
+        int result = storage_add(buf);
+        if (result == 0) {
+            log_text("[INFO] POST: Datos agregados exitosamente");
             response->code = COAP_CODE_CREATED;
         } else {
-            logServerMessage("[ERROR] POST: Error al agregar datos al storage");
+            log_text("[ERROR] POST: Error al agregar datos");
             response->code = COAP_CODE_BAD_REQ;
         }
     } else {
-        logServerMessage("[ERROR] POST: Payload vacío o inválido");
+        log_text("[ERROR] POST: Payload vacío");
         response->code = COAP_CODE_BAD_REQ;
     }
-    
-    // Configurar respuesta CoAP
+
     response->ver = 1;
-    response->type = (request->type == COAP_TYPE_NON) ? COAP_TYPE_NON : COAP_TYPE_ACK;
+    response->type = COAP_TYPE_ACK;
     response->message_id = request->message_id;
     response->token_len = request->token_len;
     memcpy(response->token, request->token, request->token_len);
@@ -180,241 +148,203 @@ void handlePostRequest(const coap_packet_t* request, coap_packet_t* response) {
     response->payload_len = 0;
 }
 
-// Usa hilos para manejar multiples clientes - Thread-safe con límites
+// Usa hilos para manejar multiples clientes
 void *handle_client(void *arg) {
     thread_args_t *args = (thread_args_t*) arg;
-    
-    // Incrementar contador de threads activos de forma thread-safe
-    pthread_mutex_lock(&threadCountMutex);
-    activeThreadCount++;
-    pthread_mutex_unlock(&threadCountMutex);
+    if (!args) {
+        log_text("[ERROR] Argumentos de thread nulos");
+        return NULL;
+    }
+
+    pthread_mutex_lock(&thread_count_mutex);
+    active_threads++;
+    pthread_mutex_unlock(&thread_count_mutex);
 
     coap_packet_t req, resp;
+    memset(&req, 0, sizeof(coap_packet_t));
+    memset(&resp, 0, sizeof(coap_packet_t));
+
     int res = coap_parse(args->buffer, args->buffer_len, &req);
     if (res != 0) {
         log_text("[ERROR] Paquete inválido (código %d)", res);
-        free(args);
         goto cleanup;
     }
 
-    logServerMessage("[INFO] Mensaje CoAP recibido: Ver=%d Type=%d Code=%d MID=0x%04X",
-                     requestPacket.ver, requestPacket.type, requestPacket.code, requestPacket.message_id);
+    log_text("[INFO] Mensaje recibido: Ver=%d Type=%d Code=%d MID=0x%04X",
+             req.ver, req.type, req.code, req.message_id);
 
-    // Procesar request según el método CoAP
-    switch (requestPacket.code) {
+    int uriId = 0;
+
+    switch (req.code) {
         case COAP_CODE_GET:
-            handleGetRequest(&requestPacket, &responsePacket);
+            handle_get(&req, &resp);
             break;
         case COAP_CODE_POST:
-            handlePostRequest(&requestPacket, &responsePacket);
+            handle_post(&req, &resp);
             break;
         case COAP_CODE_PUT:
-            {
-                int sensorId = extractSensorIdFromUri(&requestPacket);
-                if (sensorId < 0) {
-                    responsePacket.code = COAP_CODE_BAD_REQ;
-                    break;
-                }
-                
-                if (requestPacket.payload && requestPacket.payload_len > 0) {
-                    char updateBuffer[128];
-                    snprintf(updateBuffer, sizeof(updateBuffer), "%.*s", 
-                             (int)requestPacket.payload_len, requestPacket.payload);
-                    
-                    if (storage_update(sensorId, updateBuffer) == 0) {
-                        responsePacket.code = COAP_CODE_CHANGED;
-                        logServerMessage("[INFO] PUT: Datos actualizados para sensor ID %d", sensorId);
-                    } else {
-                        responsePacket.code = COAP_CODE_BAD_REQ;
-                    }
-                } else {
-                    responsePacket.code = COAP_CODE_BAD_REQ;
-                }
-                
-                // Configurar respuesta CoAP
-                responsePacket.ver = 1;
-                responsePacket.type = (requestPacket.type == COAP_TYPE_NON) ? COAP_TYPE_NON : COAP_TYPE_ACK;
-                responsePacket.message_id = requestPacket.message_id;
-                responsePacket.token_len = requestPacket.token_len;
-                memcpy(responsePacket.token, requestPacket.token, requestPacket.token_len);
-                responsePacket.payload = NULL;
-                responsePacket.payload_len = 0;
+            uriId = coap_get_uri_id(&req);
+            if (uriId < 0) {
+                resp.code = COAP_CODE_BAD_REQ;
+                break;
             }
+            if (req.payload && req.payload_len > 0) {
+                char buf[128];
+                snprintf(buf, sizeof(buf), "%.*s", (int)req.payload_len, req.payload);
+                if (storage_update(uriId, buf) == 0) {
+                    resp.code = COAP_CODE_CHANGED;
+                    log_text("[INFO] PUT recibido");
+                } else {
+                    resp.code = COAP_CODE_BAD_REQ;
+                }
+            } else {
+                resp.code = COAP_CODE_BAD_REQ;
+            }
+            resp.ver = 1;
+            resp.type = COAP_TYPE_ACK;
+            resp.message_id = req.message_id;
+            resp.token_len = req.token_len;
+            memcpy(resp.token, req.token, req.token_len);
+            resp.payload = NULL;
+            resp.payload_len = 0;
             break;
         case COAP_CODE_DELETE:
-            {
-                int sensorId = extractSensorIdFromUri(&requestPacket);
-                if (sensorId < 0) {
-                    responsePacket.code = COAP_CODE_BAD_REQ;
-                    break;
-                }
-                
-                if (storage_delete(sensorId) == 0) {
-                    responsePacket.code = COAP_CODE_DELETED;
-                    logServerMessage("[INFO] DELETE: Sensor ID %d eliminado exitosamente", sensorId);
-                } else {
-                    responsePacket.code = COAP_CODE_BAD_REQ;
-                }
-                
-                // Configurar respuesta CoAP
-                responsePacket.ver = 1;
-                responsePacket.type = (requestPacket.type == COAP_TYPE_NON) ? COAP_TYPE_NON : COAP_TYPE_ACK;
-                responsePacket.message_id = requestPacket.message_id;
-                responsePacket.token_len = requestPacket.token_len;
-                memcpy(responsePacket.token, requestPacket.token, requestPacket.token_len);
-                responsePacket.payload = NULL;
-                responsePacket.payload_len = 0;
+            uriId = coap_get_uri_id(&req);
+            if (uriId < 0) {
+                resp.code = COAP_CODE_BAD_REQ;
+                break;
             }
+            if (storage_delete(uriId) == 0) {
+                resp.code = COAP_CODE_DELETED;
+            } else {
+                resp.code = COAP_CODE_BAD_REQ;
+            }
+            resp.ver = 1;
+            resp.type = COAP_TYPE_ACK;
+            resp.message_id = req.message_id;
+            resp.token_len = req.token_len;
+            memcpy(resp.token, req.token, req.token_len);
+            resp.payload = NULL;
+            resp.payload_len = 0;
             break;
         default:
-            // Método CoAP no soportado
-            logServerMessage("[WARNING] Método CoAP no soportado: %d", requestPacket.code);
-            responsePacket.ver = 1;
-            responsePacket.type = (requestPacket.type == COAP_TYPE_NON) ? COAP_TYPE_NON : COAP_TYPE_ACK;
-            responsePacket.code = COAP_CODE_BAD_REQ;
-            responsePacket.message_id = requestPacket.message_id;
-            responsePacket.token_len = requestPacket.token_len;
-            memcpy(responsePacket.token, requestPacket.token, requestPacket.token_len);
-            responsePacket.payload = NULL;
-            responsePacket.payload_len = 0;
+            resp.ver = 1;
+            resp.type = COAP_TYPE_ACK;
+            resp.code = COAP_CODE_BAD_REQ;
+            resp.message_id = req.message_id;
+            resp.token_len = req.token_len;
+            memcpy(resp.token, req.token, req.token_len);
+            resp.payload = NULL;
+            resp.payload_len = 0;
             break;
     }
 
-    // Serializar y enviar respuesta CoAP
-    uint8_t responseBuffer[MAX_BUFFER_SIZE];
-    size_t responseLength;
-    
-    if (coap_build(&responsePacket, responseBuffer, &responseLength, sizeof(responseBuffer)) == 0) {
-        ssize_t bytesSent = sendto(clientArgs->socketFd, responseBuffer, responseLength, 0,
-                                  (struct sockaddr*) &clientArgs->clientAddress, 
-                                  clientArgs->clientAddressLength);
-        if (bytesSent < 0) {
-            logServerMessage("[ERROR] Error enviando respuesta al cliente: %s", strerror(errno));
-        } else {
-            logServerMessage("[DEBUG] Respuesta enviada: %zd bytes", bytesSent);
+    uint8_t out[MAX_BUF];
+    size_t out_len;
+    if (coap_build(&resp, out, &out_len, sizeof(out)) == 0) {
+        ssize_t sent = sendto(args->sock, out, out_len, 0,
+                             (struct sockaddr*) &args->client_addr, args->client_len);
+        if (sent < 0) {
+            log_text("[ERROR] Error enviando respuesta: %s", strerror(errno));
         }
     } else {
-        logServerMessage("[ERROR] Error serializando respuesta CoAP");
+        log_text("[ERROR] Error serializando respuesta CoAP");
     }
 
 cleanup:
-    // Decrementar contador de threads activos de forma thread-safe
-    pthread_mutex_lock(&threadCountMutex);
-    activeThreadCount--;
-    pthread_mutex_unlock(&threadCountMutex);
-    
-    // Liberar memoria del cliente
-    free(clientArgs);
+    pthread_mutex_lock(&thread_count_mutex);
+    active_threads--;
+    pthread_mutex_unlock(&thread_count_mutex);
+    free(args);
     return NULL;
 }
 
-// === FUNCIÓN PRINCIPAL ===
-/**
- * Función principal del servidor CoAP
- * @param argc Número de argumentos de línea de comandos
- * @param argv Array de argumentos (puerto, archivo de log)
- * @return 0 si exitoso, 1 si hay error
- */
-int main(int argc, char* argv[]) {
-    int serverPort = DEFAULT_SERVER_PORT;
-    const char* logFilePath = "server.log";
-    
-    // Procesar argumentos de línea de comandos
-    if (argc > 1) {
-        serverPort = atoi(argv[1]);
-        if (serverPort <= 0 || serverPort > 65535) {
-            fprintf(stderr, "Error: Puerto inválido. Usando puerto por defecto %d\n", DEFAULT_SERVER_PORT);
-            serverPort = DEFAULT_SERVER_PORT;
-        }
-    }
-    
-    if (argc > 2) {
-        logFilePath = argv[2];
-    }
+int main(int argc, char *argv[]) {
+    int port = SERVER_PORT;
+    const char *logpath = "server.log";
 
-    // Inicializar sistema de logging
-    if (log_init(logFilePath) != 0) {
-        perror("Error inicializando sistema de logging");
+    if (argc > 1) port = atoi(argv[1]);
+    if (argc > 2) logpath = argv[2];
+
+    if (log_init(logpath) != 0) {
+        perror("log_init");
         exit(1);
     }
 
-    // Abrir archivo de log del servidor
-    serverLogFile = fopen(logFilePath, "a");
-    if (!serverLogFile) {
-        perror("Error abriendo archivo de log del servidor");
+    logfile = fopen(logpath, "a");
+    if (!logfile) {
+        perror("fopen log");
         exit(1);
     }
 
-    // Crear socket UDP
-    int serverSocket = socket(AF_INET, SOCK_DGRAM, 0);
-    if (serverSocket < 0) {
-        perror("Error creando socket del servidor");
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        perror("socket");
         exit(1);
     }
 
-    // Configurar dirección del servidor
-    struct sockaddr_in serverAddress;
-    memset(&serverAddress, 0, sizeof(serverAddress));
-    serverAddress.sin_family = AF_INET;
-    serverAddress.sin_addr.s_addr = htonl(INADDR_ANY);
-    serverAddress.sin_port = htons(serverPort);
+    struct sockaddr_in servaddr;
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(port);
 
-    // Vincular socket a la dirección del servidor
-    if (bind(serverSocket, (struct sockaddr*) &serverAddress, sizeof(serverAddress)) < 0) {
-        perror("Error vinculando socket del servidor");
-        close(serverSocket);
+    if (bind(sock, (struct sockaddr*) &servaddr, sizeof(servaddr)) < 0) {
+        perror("bind");
+        close(sock);
         exit(1);
     }
 
-    // Inicializar sistema de almacenamiento
     storage_init("data.json");
 
-    logServerMessage("Servidor CoAP iniciado - Puerto: %d, Log: %s", serverPort, logFilePath);
+    log_text("Servidor CoAP escuchando en el puerto %d, creando log en %s", port, logpath);
 
-    // === BUCLE PRINCIPAL DEL SERVIDOR ===
     while (1) {
-        // Verificar límite de threads concurrentes
-        pthread_mutex_lock(&threadCountMutex);
-        if (activeThreadCount >= MAX_CONCURRENT_THREADS) {
-            pthread_mutex_unlock(&threadCountMutex);
-            logServerMessage("[WARNING] Límite de threads alcanzado (%d), esperando...", MAX_CONCURRENT_THREADS);
+        pthread_mutex_lock(&thread_count_mutex);
+        if (active_threads >= MAX_THREADS) {
+            pthread_mutex_unlock(&thread_count_mutex);
+            log_text("[WARNING] Límite de threads alcanzado (%d), esperando...", MAX_THREADS);
             sleep(1);
             continue;
         }
-        pthread_mutex_unlock(&threadCountMutex);
+        pthread_mutex_unlock(&thread_count_mutex);
 
-        // Asignar memoria para argumentos del thread
-        thread_args_t* clientArgs = malloc(sizeof(thread_args_t));
-        if (!clientArgs) {
-            logServerMessage("[ERROR] Error asignando memoria para thread de cliente");
+        thread_args_t *args = malloc(sizeof(thread_args_t));
+        if (!args) {
+            log_text("[ERROR] Error asignando memoria para thread");
             continue;
         }
 
+        memset(args, 0, sizeof(thread_args_t));
         args->sock = sock;
         args->client_len = sizeof(args->client_addr);
+
         args->buffer_len = recvfrom(sock, args->buffer, MAX_BUF, 0,
-                                    (struct sockaddr*) &args->client_addr,
-                                    &args->client_len);
+                                   (struct sockaddr*) &args->client_addr, &args->client_len);
 
         if (args->buffer_len > 0) {
+            if (args->buffer_len > MAX_BUF) {
+                log_text("[ERROR] Buffer demasiado grande: %zu bytes", args->buffer_len);
+                free(args);
+                continue;
+            }
+
             pthread_t tid;
             int result = pthread_create(&tid, NULL, handle_client, args);
             if (result != 0) {
                 log_text("[ERROR] Error creando thread: %s", strerror(result));
                 free(args);
             } else {
-                pthread_detach(clientThreadId); // Thread se auto-libera al terminar
+                pthread_detach(tid);
             }
-        } else if (clientArgs->receivedBufferLength < 0) {
-            logServerMessage("[ERROR] Error recibiendo datos del cliente: %s", strerror(errno));
-            free(clientArgs);
+        } else if (args->buffer_len < 0) {
+            log_text("[ERROR] Error recibiendo datos: %s", strerror(errno));
+            free(args);
         } else {
-            // receivedBufferLength == 0, cliente cerró conexión
-            free(clientArgs);
+            free(args);
         }
     }
 
-    // Cerrar socket del servidor (nunca se alcanza en bucle infinito)
-    close(serverSocket);
+    close(sock);
     return 0;
 }
