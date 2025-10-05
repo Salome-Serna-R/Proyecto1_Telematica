@@ -194,7 +194,7 @@ void handlePostRequest(const coap_packet_t* request, coap_packet_t* response) {
     
     // Configurar respuesta CoAP
     response->ver = 1;
-    response->type = COAP_TYPE_ACK;
+    response->type = (request->type == COAP_TYPE_NON) ? COAP_TYPE_NON : COAP_TYPE_ACK;
     response->message_id = request->message_id;
     response->token_len = request->token_len;
     memcpy(response->token, request->token, request->token_len);
@@ -227,8 +227,22 @@ void* handleClientThread(void* threadArguments) {
     memset(&responsePacket, 0, sizeof(coap_packet_t));
     
     int parseResult = coap_parse(clientArgs->receivedBuffer, clientArgs->receivedBufferLength, &requestPacket);
-    if (parseResult != 0) {
+    if (parseResult != 0 || !coap_validate(&requestPacket)) {
         logServerMessage("[ERROR] Paquete CoAP inválido (código de error: %d)", parseResult);
+        
+
+        coap_packet_t rstPacket;
+        memset(&rstPacket, 0, sizeof(coap_packet_t));
+        rstPacket.ver = 1;
+        rstPacket.type = COAP_TYPE_RST;
+        rstPacket.code = COAP_CODE_BAD_REQ;
+        rstPacket.message_id = requestPacket.message_id;
+        
+        uint8_t outBuffer[MAX_BUFFER_SIZE];
+        size_t outLength;
+        if (coap_build(&rstPacket, outBuffer, &outLength, sizeof(outBuffer)) == 0) {
+            sendto(clientArgs->socketFd, outBuffer, outLength, 0, (struct sockaddr*) &clientArgs->clientAddress, clientArgs->clientAddressLength);
+        }
         goto cleanup;
     }
 
@@ -268,7 +282,7 @@ void* handleClientThread(void* threadArguments) {
                 
                 // Configurar respuesta CoAP
                 responsePacket.ver = 1;
-                responsePacket.type = COAP_TYPE_ACK;
+                responsePacket.type = (requestPacket.type == COAP_TYPE_NON) ? COAP_TYPE_NON : COAP_TYPE_ACK;
                 responsePacket.message_id = requestPacket.message_id;
                 responsePacket.token_len = requestPacket.token_len;
                 memcpy(responsePacket.token, requestPacket.token, requestPacket.token_len);
@@ -293,7 +307,7 @@ void* handleClientThread(void* threadArguments) {
                 
                 // Configurar respuesta CoAP
                 responsePacket.ver = 1;
-                responsePacket.type = COAP_TYPE_ACK;
+                responsePacket.type = (requestPacket.type == COAP_TYPE_NON) ? COAP_TYPE_NON : COAP_TYPE_ACK;
                 responsePacket.message_id = requestPacket.message_id;
                 responsePacket.token_len = requestPacket.token_len;
                 memcpy(responsePacket.token, requestPacket.token, requestPacket.token_len);
@@ -305,7 +319,7 @@ void* handleClientThread(void* threadArguments) {
             // Método CoAP no soportado
             logServerMessage("[WARNING] Método CoAP no soportado: %d", requestPacket.code);
             responsePacket.ver = 1;
-            responsePacket.type = COAP_TYPE_ACK;
+            responsePacket.type = (requestPacket.type == COAP_TYPE_NON) ? COAP_TYPE_NON : COAP_TYPE_ACK;
             responsePacket.code = COAP_CODE_BAD_REQ;
             responsePacket.message_id = requestPacket.message_id;
             responsePacket.token_len = requestPacket.token_len;

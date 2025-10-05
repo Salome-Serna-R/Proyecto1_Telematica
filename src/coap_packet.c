@@ -90,8 +90,6 @@ int coap_build(const coap_packet_t *paquete, uint8_t *out_buffer, size_t *out_le
     out_buffer[index++] = (paquete->message_id >> 8) & 0xFF;
     out_buffer[index++] = paquete->message_id & 0xFF;
 
-    // Opciones del mensaje
-    //TODO: Hacer eventualmente
 
     // Token
     memcpy(out_buffer + index, paquete->token, paquete->token_len);
