@@ -120,7 +120,7 @@ int storage_add(const char *value) {
 
     if (data_len <= 2) {
         // archivo vacío: []
-        snprintf(new_data, new_len, "[\n\t%s\n]", entry);
+        snprintf(new_data, new_len, "[%s]", entry);
     } else {
         // Crear una copia temporal para no modificar el buffer original
         char *temp_data = malloc(data_len + 1);
@@ -132,7 +132,7 @@ int storage_add(const char *value) {
         }
         strcpy(temp_data, data);
         temp_data[data_len-2] = '\0'; // quitar ']' de la copia
-        snprintf(new_data, new_len, "%s,\n\t%s\n]", temp_data, entry);
+        snprintf(new_data, new_len, "%s,%s]", temp_data, entry);
         free(temp_data);
     }
 
