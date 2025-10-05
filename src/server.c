@@ -165,24 +165,24 @@ void *handle_client(void *arg) {
     memset(&resp, 0, sizeof(coap_packet_t));
 
     int res = coap_parse(args->buffer, args->buffer_len, &req);
-if (res != 0 || !coap_validate(&req)) {
-    log_text("[ERROR] Paquete inválido, respondiendo con RST");
+    if (res != 0 || !coap_validate(&req)) {
+        log_text("[ERROR] Paquete inválido, respondiendo con RST");
 
-    coap_packet_t rst;
-    memset(&rst, 0, sizeof(coap_packet_t));
-    rst.ver = 1;
-    rst.type = COAP_TYPE_RST;
-    rst.code = COAP_CODE_EMPTY;
-    rst.message_id = req.message_id; // eco del MID recibido
+        coap_packet_t rst;
+        memset(&rst, 0, sizeof(coap_packet_t));
+        rst.ver = 1;
+        rst.type = COAP_TYPE_RST;
+        rst.code = COAP_CODE_EMPTY;
+        rst.message_id = req.message_id; // eco del MID recibido
 
-    uint8_t out[MAX_BUF];
-    size_t out_len;
-    if (coap_build(&rst, out, &out_len, sizeof(out)) == 0) {
-        sendto(args->sock, out, out_len, 0,
-               (struct sockaddr*) &args->client_addr, args->client_len);
+        uint8_t out[MAX_BUF];
+        size_t out_len;
+        if (coap_build(&rst, out, &out_len, sizeof(out)) == 0) {
+            sendto(args->sock, out, out_len, 0,
+                (struct sockaddr*) &args->client_addr, args->client_len);
+        }
+        goto cleanup;
     }
-    goto cleanup;
-}
 
 
     log_text("[INFO] Mensaje recibido: Ver=%d Type=%d Code=%d MID=0x%04X",

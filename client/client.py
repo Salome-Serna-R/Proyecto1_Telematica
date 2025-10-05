@@ -22,9 +22,8 @@ COAP_CODE_DELETED = 66   # 2.02
 COAP_CODE_BAD_REQ = 128  # 4.00
 
 # Construir paquete CoAP simple
-def build_coap_packet(code, mid, uri_path=None, payload=None):
+def build_coap_packet(code, mid, uri_path=None, payload=None, msg_type = COAP_TYPE_CON):
     version = 1
-    msg_type = COAP_TYPE_CON
     token = b''
 
     first_byte = (version << 6) | (msg_type << 4) | len(token)
@@ -63,6 +62,9 @@ def main():
     method = sys.argv[2].upper()
     uri = sys.argv[3]
     payload = sys.argv[4] if len(sys.argv) > 4 else None
+    use_non = False
+    if "--non" in sys.argv:
+        use_non = True
 
     if method == "GET":
         code = COAP_CODE_GET
@@ -75,7 +77,9 @@ def main():
         sys.exit(1)
 
     mid = random.randint(0, 65535)
-    packet = build_coap_packet(code, mid, uri_path=uri, payload=payload)
+    msg_type = COAP_TYPE_NON if use_non else COAP_TYPE_CON
+    
+    packet = build_coap_packet(code, mid, uri_path=uri, payload=payload, msg_type=msg_type)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(3)
