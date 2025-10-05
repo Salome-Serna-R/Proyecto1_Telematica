@@ -122,18 +122,8 @@ int storage_add(const char *value) {
         // archivo vacío: []
         snprintf(new_data, new_len, "[%s]", entry);
     } else {
-        // Crear una copia temporal para no modificar el buffer original
-        char *temp_data = malloc(data_len + 1);
-        if (!temp_data) {
-            free(data);
-            free(new_data);
-            pthread_mutex_unlock(&storage_mutex);
-            return -1;
-        }
-        strcpy(temp_data, data);
-        temp_data[data_len-1] = '\0'; // quitar ']' de la copia
-        snprintf(new_data, new_len, "%s,%s]", temp_data, entry);
-        free(temp_data);
+        data[data_len-1] = '\0'; // quitar ']'
+        snprintf(new_data, new_len, "%s,%s]", data, entry);
     }
 
     int response = write_file(new_data);
