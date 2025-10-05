@@ -2,8 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <pthread.h>
+#include <errno.h>
 #include "storage.h"
 
+// Mutex para proteger operaciones de archivo
+static pthread_mutex_t storage_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int entry_count = 0;
 static int next_id = 1;
@@ -26,28 +30,37 @@ int storage_init(const char *filename) {
     return 0;
 }
 
-// Función auxiliar: leer todo el archivo en memoria
+// Función auxiliar: leer todo el archivo en memoria (thread-safe)
 static char *read_file() {
-    FILE *archivo = fopen(storage_file, "r+");
+    FILE *archivo = fopen(storage_file, "r");
     if (!archivo) return NULL;
+    
     fseek(archivo, 0, SEEK_END);
     long len = ftell(archivo);
     rewind(archivo);
 
     char *buf = malloc(len+1);
-    fread(buf, 1, len, archivo);
-    buf[len] = '\0';
+    if (!buf) {
+        fclose(archivo);
+        return NULL;
+    }
+    
+    size_t bytes_read = fread(buf, 1, len, archivo);
+    buf[bytes_read] = '\0';
     fclose(archivo);
     return buf;
 }
 
-// Función auxiliar: sobrescribir archivo
+// Función auxiliar: sobrescribir archivo (thread-safe)
 static int write_file(const char *content) {
-    FILE *archivo = fopen(storage_file, "w+");
+    FILE *archivo = fopen(storage_file, "w");
     if (!archivo) return -1;
-    fputs(content, archivo);
+    
+    size_t len = strlen(content);
+    size_t written = fwrite(content, 1, len, archivo);
     fclose(archivo);
-    return 0;
+    
+    return (written == len) ? 0 : -1;
 }
 
 // Generar timestamp ISO simple
@@ -57,10 +70,17 @@ static void get_timestamp(char *buf, size_t max) {
     strftime(buf, max, "%Y-%m-%dT%H:%M:%S", tm_info);
 }
 
-// Agregar un dato (POST)
+// Agregar un dato (POST) - Thread-safe
 int storage_add(const char *value) {
+    if (!value) return -1;
+    
+    pthread_mutex_lock(&storage_mutex);
+    
     char *data = read_file();
-    if (!data) return -1;
+    if (!data) {
+        pthread_mutex_unlock(&storage_mutex);
+        return -1;
+    }
 
     // Buscar último id
     int last_id = 0;
@@ -75,32 +95,56 @@ int storage_add(const char *value) {
     char ts[64];
     get_timestamp(ts, sizeof(ts));
 
-    // Crear nuevo objeto JSON
-    char entry[256];
-    snprintf(entry, sizeof(entry),
+    // Crear nuevo objeto JSON con validación de tamaño
+    char entry[512];
+    int entry_len = snprintf(entry, sizeof(entry),
         "{\"id\":%d,\"ts\":\"%s\",\"value\":\"%s\"}",
         new_id, ts, value);
-
-    // Insertar en el array
-    if (strlen(data) <= 2) {
-        // archivo vacío: []
-        snprintf(data, 256, "[%s]", entry);
-    } else {
-        data[strlen(data)-1] = '\0'; // quitar ']'
-        strcat(data, ",");
-        strcat(data, entry);
-        strcat(data, "]");
+    
+    if (entry_len >= sizeof(entry)) {
+        free(data);
+        pthread_mutex_unlock(&storage_mutex);
+        return -1; // Buffer overflow
     }
 
-    int response = write_file(data);
+    // Construir nuevo JSON de forma segura
+    size_t data_len = strlen(data);
+    size_t new_len = data_len + entry_len + 10; // espacio extra para comas y brackets
+    
+    char *new_data = malloc(new_len);
+    if (!new_data) {
+        free(data);
+        pthread_mutex_unlock(&storage_mutex);
+        return -1;
+    }
+
+    if (data_len <= 2) {
+        // archivo vacío: []
+        snprintf(new_data, new_len, "[%s]", entry);
+    } else {
+        data[data_len-1] = '\0'; // quitar ']'
+        snprintf(new_data, new_len, "%s,%s]", data, entry);
+    }
+
+    int response = write_file(new_data);
     free(data);
+    free(new_data);
+    
+    pthread_mutex_unlock(&storage_mutex);
     return response;
 }
 
-// Obtener un valor por id
+// Obtener un valor por id - Thread-safe
 int storage_get(int id, char *out, size_t max_len) {
+    if (!out || max_len == 0) return -1;
+    
+    pthread_mutex_lock(&storage_mutex);
+    
     char *data = read_file();
-    if (!data) return -1;
+    if (!data) {
+        pthread_mutex_unlock(&storage_mutex);
+        return -1;
+    }
 
     char key[16];
     snprintf(key, sizeof(key), "\"id\":%d", id);
@@ -108,6 +152,7 @@ int storage_get(int id, char *out, size_t max_len) {
     char *p = strstr(data, key);
     if (!p) {
         free(data);
+        pthread_mutex_unlock(&storage_mutex);
         return -2; // no encontrado
     }
 
@@ -115,12 +160,14 @@ int storage_get(int id, char *out, size_t max_len) {
     char *val = strstr(p, "\"value\":\"");
     if (!val) {
         free(data);
+        pthread_mutex_unlock(&storage_mutex);
         return -3;
     }
     val += 9;
     char *end = strchr(val, '"');
     if (!end) {
         free(data);
+        pthread_mutex_unlock(&storage_mutex);
         return -4;
     }
 
@@ -130,12 +177,20 @@ int storage_get(int id, char *out, size_t max_len) {
     out[len] = '\0';
 
     free(data);
+    pthread_mutex_unlock(&storage_mutex);
     return 0;
 }
 
 int storage_update(int id, const char *new_value) {
+    if (!new_value) return -1;
+    
+    pthread_mutex_lock(&storage_mutex);
+    
     char *data = read_file();
-    if (!data) return -1;
+    if (!data) {
+        pthread_mutex_unlock(&storage_mutex);
+        return -1;
+    }
 
     char key[32];
     snprintf(key, sizeof(key), "\"id\":%d", id);
@@ -143,6 +198,7 @@ int storage_update(int id, const char *new_value) {
     char *p = strstr(data, key);
     if (!p) {
         free(data);
+        pthread_mutex_unlock(&storage_mutex);
         return -2; // no encontrado
     }
 
@@ -150,6 +206,7 @@ int storage_update(int id, const char *new_value) {
     char *val = strstr(p, "\"value\":\"");
     if (!val) {
         free(data);
+        pthread_mutex_unlock(&storage_mutex);
         return -3;
     }
     val += 9; // mover después de "value":"
@@ -157,27 +214,46 @@ int storage_update(int id, const char *new_value) {
     char *end = strchr(val, '"');
     if (!end) {
         free(data);
+        pthread_mutex_unlock(&storage_mutex);
         return -4;
     }
 
-    // Construir nueva cadena
-    char new_data[8192];
+    // Construir nueva cadena de forma segura
+    size_t data_len = strlen(data);
+    size_t new_value_len = strlen(new_value);
     size_t prefix_len = val - data;
+    size_t suffix_len = strlen(end);
+    size_t total_len = prefix_len + new_value_len + suffix_len + 1;
+    
+    char *new_data = malloc(total_len);
+    if (!new_data) {
+        free(data);
+        pthread_mutex_unlock(&storage_mutex);
+        return -1;
+    }
+    
     strncpy(new_data, data, prefix_len);
     new_data[prefix_len] = '\0';
-
     strcat(new_data, new_value);
     strcat(new_data, end);
 
     int response = write_file(new_data);
     free(data);
+    free(new_data);
+    
+    pthread_mutex_unlock(&storage_mutex);
     return response;
 }
 
-// Eliminar una entrada
+// Eliminar una entrada - Thread-safe
 int storage_delete(int id) {
+    pthread_mutex_lock(&storage_mutex);
+    
     char *data = read_file();
-    if (!data) return -1;
+    if (!data) {
+        pthread_mutex_unlock(&storage_mutex);
+        return -1;
+    }
 
     char key[32];
     snprintf(key, sizeof(key), "\"id\":%d", id);
@@ -185,6 +261,7 @@ int storage_delete(int id) {
     char *p = strstr(data, key);
     if (!p) {
         free(data);
+        pthread_mutex_unlock(&storage_mutex);
         return -2; // no encontrado
     }
 
@@ -196,17 +273,26 @@ int storage_delete(int id) {
     char *end = strchr(p, '}');
     if (!end) {
         free(data);
+        pthread_mutex_unlock(&storage_mutex);
         return -3;
     }
     end++; // incluir '}'
 
-    // Construir nueva cadena
-    char new_data[8192];
+    // Construir nueva cadena de forma segura
+    size_t data_len = strlen(data);
     size_t prefix_len = start - data;
+    size_t suffix_len = strlen(end);
+    size_t total_len = prefix_len + suffix_len + 1;
+    
+    char *new_data = malloc(total_len);
+    if (!new_data) {
+        free(data);
+        pthread_mutex_unlock(&storage_mutex);
+        return -1;
+    }
+    
     strncpy(new_data, data, prefix_len);
     new_data[prefix_len] = '\0';
-
-    // Saltar objeto eliminado
     strcat(new_data, end);
 
     // Arreglar posibles comas extras
@@ -218,5 +304,8 @@ int storage_delete(int id) {
 
     int res = write_file(new_data);
     free(data);
+    free(new_data);
+    
+    pthread_mutex_unlock(&storage_mutex);
     return res;
 }
