@@ -14,7 +14,7 @@
 #define SERVER_PORT 5683 // Puerto por defecto de CoAP
 #define MAX_BUF 1500
 FILE *logfile = NULL;
-static char response_buffer[256]; // Ayuda a no leer datos basura de memoria en payloads de respuesta
+//static char response_buffer[256]; // Ayuda a no leer datos basura de memoria en payloads de respuesta
 
 // Estructura para pasar datos al thread
 typedef struct {
@@ -44,6 +44,7 @@ int coap_get_uri_id(const coap_packet_t *pkt) {
 }
 
 void handle_get(coap_packet_t *request, coap_packet_t *response) {
+    memset(response, 0, sizeof(*response));
     int id = coap_get_uri_id(request);
     if (id < 0) {
         response->code = COAP_CODE_BAD_REQ;
@@ -52,15 +53,18 @@ void handle_get(coap_packet_t *request, coap_packet_t *response) {
 
     char value[128];
     if (storage_get(id, value, sizeof(value)) == 0) {
-        snprintf(response_buffer, sizeof(response_buffer), "%s", value);
+        char *dyn = strdup(value);
+        if (!dyn) {
+            response->code = COAP_CODE_BAD_REQ;
+            return;
+        }
+        response->payload = (uint8_t*) dyn;
+        response->payload_len = strlen(dyn);
         response->code = COAP_CODE_CONTENT;
-        response->payload = (uint8_t*) response_buffer;
-        response->payload_len = strlen(response_buffer);
     }
     else {
         response->code = COAP_CODE_BAD_REQ;
     }
-
     response->ver = 1;
     response->type = COAP_TYPE_ACK;
     response->message_id = request->message_id;
@@ -70,6 +74,8 @@ void handle_get(coap_packet_t *request, coap_packet_t *response) {
 
 
 void handle_post(coap_packet_t *request, coap_packet_t *response) {
+    memset(response, 0, sizeof(*response));
+
     if (request->payload && request->payload_len > 0) {
         char buffer[128];
         snprintf(buffer, sizeof(buffer), "%.*s", (int)request->payload_len, request->payload);
@@ -81,14 +87,16 @@ void handle_post(coap_packet_t *request, coap_packet_t *response) {
     response->message_id = request->message_id;
     response->token_len = request->token_len;
     memcpy(response->token, request->token, request->token_len);
-    printf("[DEBUG] Este print se envia antes de asignar el payload de la respuesta.");
+    printf("[DEBUG] Este print se envia antes de asignar el payload de la respuesta.\n");
     response->payload = NULL;
-    printf("[DEBUG] Este print se envia despues de asignar el payload nulo.");
+    printf("[DEBUG] Este print se envia despues de asignar el payload nulo.\n");
     response->payload_len = 0;
     printf("[DEBUG] Si este print se envia, el mensaje de respuesta de CoAP fue enviado creado exitosamente.\n");
 }
 
 void handle_put(coap_packet_t *request, coap_packet_t *response) {
+    memset(response, 0, sizeof(*response));
+
     int id = coap_get_uri_id(request);
     if (id < 0) {
         response->code = COAP_CODE_BAD_REQ;
@@ -117,6 +125,8 @@ void handle_put(coap_packet_t *request, coap_packet_t *response) {
 }
 
 void handle_delete(coap_packet_t *request, coap_packet_t *response) {
+    memset(response, 0, sizeof(*response));
+
     int id = coap_get_uri_id(request);
     if (id < 0){
         response->code = COAP_CODE_BAD_REQ;
@@ -152,7 +162,6 @@ void *handle_client(void *arg) {
     log_text("[INFO] Mensaje recibido: Ver=%d Type=%d Code=%d MID=0x%04X\n",
            req.ver, req.type, req.code, req.message_id);
 
-    int uriId = 0; // Inicializar variable del Uri_ID del mensaje
     // Procesar según el código
     switch (req.code) {
         case COAP_CODE_GET:
@@ -186,6 +195,12 @@ void *handle_client(void *arg) {
     if (coap_build(&resp, out, &out_len, sizeof(out)) == 0) {
         sendto(args->sock, out, out_len, 0,
                (struct sockaddr*) &args->client_addr, args->client_len);
+    }
+
+    // Liberar el payloa dinamico si existe
+    if (resp.payload) {
+        free(resp.payload);
+        resp.payload = NULL;
     }
 
     free(args);
