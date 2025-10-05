@@ -14,7 +14,7 @@
 #define SERVER_PORT 5683 // Puerto por defecto de CoAP
 #define MAX_BUF 1500
 FILE *logfile = NULL;
-static char response_buffer[256]; // Ayuda a no leer datos basura de memoria
+static char response_buffer[256]; // Ayuda a no leer datos basura de memoria en payloads de respuesta
 
 // Estructura para pasar datos al thread
 typedef struct {
@@ -26,36 +26,10 @@ typedef struct {
 } thread_args_t;
 
 
-// Hacer log de los mensajes del servidor
-void message_log(const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-
-    time_t now = time(NULL);
-    char timestamp[32];
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
-    // Escribir también en consola para tener un log en tiempo real de ejecución
-    log_text("[%s]", timestamp);
-    vprintf(fmt, args);
-    log_text("\n");
-
-    if (logfile) {
-        fprintf(logfile, "[%s]", timestamp);
-        vfprintf(logfile, fmt, args);
-        fprintf(logfile, "\n");
-        fflush(logfile); // Escritura inmediata
-    }
-    else {
-        log_text("[ERROR] No se pudo escribir en el archivo de log."); // Debug
-    }
-    va_end(args);
-}
-
 // Conseguir ID de option
 int coap_get_uri_id(const coap_packet_t *pkt) {
     for (int i = 0; i < pkt->options_count; i++) {
-        if (pkt->options[i].number == 11) { // Uri-Path
-            // revisar si es número
+        if (pkt->options[i].number == 11) {
             char buf[32];
             if (pkt->options[i].length < sizeof(buf)) {
                 memcpy(buf, pkt->options[i].value, pkt->options[i].length);
@@ -97,9 +71,9 @@ void handle_get(coap_packet_t *request, coap_packet_t *response) {
 
 void handle_post(coap_packet_t *request, coap_packet_t *response) {
     if (request->payload && request->payload_len > 0) {
-        char buf[128];
-        snprintf(buf, sizeof(buf), "%.*s", (int)request->payload_len, request->payload);
-        storage_add(buf);
+        char buffer[128];
+        snprintf(buffer, sizeof(buffer), "%.*s", (int)request->payload_len, request->payload);
+        storage_add(buffer);
     }
     response->ver = 1;
     response->type = COAP_TYPE_ACK;
@@ -108,10 +82,59 @@ void handle_post(coap_packet_t *request, coap_packet_t *response) {
     response->token_len = request->token_len;
     memcpy(response->token, request->token, request->token_len);
     printf("[DEBUG] Este print se envia antes de asignar el payload de la respuesta.");
-    /*response->payload = 0;
-    printf("[DEBUG] Si este print se envia, el problema sucede despues de asignar el payload por algun motivo.\n");*/
+    response->payload = NULL;
+    printf("[DEBUG] Este print se envia despues de asignar el payload nulo.");
     response->payload_len = 0;
     printf("[DEBUG] Si este print se envia, el mensaje de respuesta de CoAP fue enviado creado exitosamente.\n");
+}
+
+void handle_put(coap_packet_t *request, coap_packet_t *response) {
+    int id = coap_get_uri_id(request);
+    if (id < 0) {
+        response->code = COAP_CODE_BAD_REQ;
+        return;
+    }
+    if (request->payload && request->payload_len > 0) {
+        char buffer[128];
+        snprintf(buffer, sizeof(buffer), "%.*s", (int)request->payload_len, request->payload);
+        if (storage_update(id, buffer) == 0) {
+            response->code = COAP_CODE_CHANGED;
+        }
+        else {
+            response->code = COAP_CODE_BAD_REQ;
+        }
+    }
+    else {
+        response->code = COAP_CODE_BAD_REQ;
+    }
+    response->ver = 1;
+    response->type = COAP_TYPE_ACK;
+    response->message_id = request->message_id;
+    response->token_len = request->token_len;
+    memcpy(response->token, request->token, request->token_len);
+    response->payload = NULL;
+    response->payload_len = 0;
+}
+
+void handle_delete(coap_packet_t *request, coap_packet_t *response) {
+    int id = coap_get_uri_id(request);
+    if (id < 0){
+        response->code = COAP_CODE_BAD_REQ;
+        return;
+    }
+    if (storage_delete(id) == 0) {
+        response->code = COAP_CODE_DELETED;
+    }
+    else {
+        response->code = COAP_CODE_BAD_REQ;
+    }
+    response->ver = 1;
+    response->type = COAP_TYPE_ACK;
+    response->message_id = request->message_id;
+    response->token_len = request->token_len;
+    memcpy(response->token, request->token, request->token_len);
+    response->payload = NULL;
+    response->payload_len = 0;
 }
 
 // Usa hilos para manejar multiples clientes
@@ -139,52 +162,10 @@ void *handle_client(void *arg) {
             handle_post(&req, &resp);
             break;
         case COAP_CODE_PUT:
-            uriId = coap_get_uri_id(&req);
-            if (uriId < 0) {
-                resp.code = COAP_CODE_BAD_REQ;
-                break;
-            }
-            if (req.payload && req.payload_len > 0) {
-                char buf[128];
-                snprintf(buf, sizeof(buf), "%.*s", (int)req.payload_len, req.payload);
-                if (storage_update(uriId, buf) == 0) {
-                    resp.code = COAP_CODE_CHANGED;
-                    log_text("[INFO] PUT recibido\n");
-                }
-                else {
-                    resp.code = COAP_CODE_BAD_REQ;
-                }
-            }
-            else {
-                resp.code = COAP_CODE_BAD_REQ;
-            }
-            resp.ver = 1;
-            resp.type = COAP_TYPE_ACK;
-            resp.message_id = req.message_id;
-            resp.token_len = req.token_len;
-            memcpy(resp.token, req.token, req.token_len);
-            resp.payload = NULL;
-            resp.payload_len = 0;
+            handle_put(&req, &resp);
             break;
         case COAP_CODE_DELETE:
-            uriId = coap_get_uri_id(&req);
-            if (uriId < 0) {
-                resp.code = COAP_CODE_BAD_REQ;
-                break;
-            }
-            if (storage_delete(uriId) == 0) {
-                resp.code = COAP_CODE_DELETED;
-            }
-            else {
-                resp.code = COAP_CODE_BAD_REQ;
-            }
-            resp.ver = 1;
-            resp.type = COAP_TYPE_ACK;
-            resp.message_id = req.message_id;
-            resp.token_len = req.token_len;
-            memcpy(resp.token, req.token, req.token_len);
-            resp.payload = NULL;
-            resp.payload_len = 0;
+            handle_delete(&req, &resp);
             break;
         default:
             // Respuesta vacía para códigos no implementados
@@ -221,13 +202,6 @@ int main(int argc, char *argv[]) {
 
     if (log_init(logpath) != 0) {
         perror("log_init");
-        exit(1);
-    }
-
-    logfile = fopen(logpath, "a");
-    //setvbuf(logfile, NULL, _IONBF, 0); // Abrir el archivo sin buffer
-    if (!logfile) {
-        perror("fopen log");
         exit(1);
     }
 
