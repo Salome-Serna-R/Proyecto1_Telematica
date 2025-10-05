@@ -15,7 +15,7 @@ Se requiere un computador con:
 
 * Python instalado
 * gcc instalado
-* Un ESP32 (o uno simulado en Wokwi)
+* Un ESP32 (o uno simulado en Wokwi) con la libreria "DHT sensor library" de Adafruit
 * Un DHT (o uno simulado en Wokwi)
 * Conexión a Internet
 
@@ -25,6 +25,10 @@ El servidor se puede compilar con el Makefile ejecutando el comando "make" en un
 En el caso que esto no funcione, el método clásico también funciona:
 
 `gcc -o server src/server.c src/coap_packet.c src/storage.c -lpthread`
+
+El servidor se ejecuta de la siguiente forma:
+
+`./server <PUERTO> <archivo.log>` especificando un puerto y el nombre del archivo donde se hace registro de las operaciones del servidor. Si se ejecuta sin parámetros, el servidor tomará valores por defecto (puerto 5683 y servidor.log).
 
 El cliente de consulta de Python se ejecuta desde la terminal con python o python3.
 
