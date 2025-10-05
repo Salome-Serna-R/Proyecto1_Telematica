@@ -68,44 +68,22 @@ void logServerMessage(const char* formatString, ...) {
     va_end(argumentList);
 }
 
-// === FUNCIONES DE PROCESAMIENTO CoAP ===
-/**
- * Extrae el ID del sensor desde las opciones URI-Path del paquete CoAP
- * @param coapPacket Paquete CoAP parseado
- * @return ID del sensor si se encuentra, -1 si hay error
- */
-int extractSensorIdFromUri(const coap_packet_t* coapPacket) {
-    if (!coapPacket) {
-        return -1;
-    }
-    
-    // Validar que el paquete tenga opciones válidas
-    if (coapPacket->options_count <= 0 || coapPacket->options_count > 16) {
-        return -1;
-    }
-    
-    // Buscar la opción URI-Path (número 11 según RFC 7252)
-    for (int optionIndex = 0; optionIndex < coapPacket->options_count; optionIndex++) {
-        if (coapPacket->options[optionIndex].number == 11) { // URI-Path
-            // Validar longitud del URI antes de procesar
-            if (coapPacket->options[optionIndex].length > 0 && 
-                coapPacket->options[optionIndex].length < MAX_URI_LENGTH) {
-                
-                char uriBuffer[MAX_URI_LENGTH];
-                memcpy(uriBuffer, coapPacket->options[optionIndex].value, 
-                       coapPacket->options[optionIndex].length);
-                uriBuffer[coapPacket->options[optionIndex].length] = '\0';
-                
-                // Convertir URI a ID numérico
-                int sensorId = atoi(uriBuffer);
-                if (sensorId > 0) {
-                    return sensorId;
-                }
+// Conseguir ID de option
+int coap_get_uri_id(const coap_packet_t *pkt) {
+    for (int i = 0; i < pkt->options_count; i++) {
+        if (pkt->options[i].number == 11) { // Uri-Path
+            // revisar si es número
+            char buf[32];
+            if (pkt->options[i].length < sizeof(buf)) {
+                memcpy(buf, pkt->options[i].value, pkt->options[i].length);
+                buf[pkt->options[i].length] = '\0';
+                // intentar parsear como entero
+                int id = atoi(buf);
+                if (id > 0) return id;
             }
         }
     }
-    
-    return -1; // URI no encontrado o inválido
+    return -1; // no encontrado
 }
 
 // === MANEJADORES DE REQUESTS ===
@@ -202,47 +180,20 @@ void handlePostRequest(const coap_packet_t* request, coap_packet_t* response) {
     response->payload_len = 0;
 }
 
-// === MANEJADOR DE CLIENTES ===
-/**
- * Maneja un cliente individual en un thread separado
- * @param threadArguments Argumentos del thread (socket, buffer, etc.)
- * @return NULL siempre (thread se auto-libera)
- */
-void* handleClientThread(void* threadArguments) {
-    thread_args_t* clientArgs = (thread_args_t*) threadArguments;
-    
-    if (!clientArgs) {
-        logServerMessage("[ERROR] Argumentos de thread nulos");
-        return NULL;
-    }
+// Usa hilos para manejar multiples clientes - Thread-safe con límites
+void *handle_client(void *arg) {
+    thread_args_t *args = (thread_args_t*) arg;
     
     // Incrementar contador de threads activos de forma thread-safe
     pthread_mutex_lock(&threadCountMutex);
     activeThreadCount++;
     pthread_mutex_unlock(&threadCountMutex);
 
-    // Inicializar estructuras de paquetes CoAP
-    coap_packet_t requestPacket, responsePacket;
-    memset(&requestPacket, 0, sizeof(coap_packet_t));
-    memset(&responsePacket, 0, sizeof(coap_packet_t));
-    
-    int parseResult = coap_parse(clientArgs->receivedBuffer, clientArgs->receivedBufferLength, &requestPacket);
-    if (parseResult != 0 || !coap_validate(&requestPacket)) {
-        logServerMessage("[ERROR] Paquete CoAP inválido (código de error: %d)", parseResult);
-        
-
-        coap_packet_t rstPacket;
-        memset(&rstPacket, 0, sizeof(coap_packet_t));
-        rstPacket.ver = 1;
-        rstPacket.type = COAP_TYPE_RST;
-        rstPacket.code = COAP_CODE_BAD_REQ;
-        rstPacket.message_id = requestPacket.message_id;
-        
-        uint8_t outBuffer[MAX_BUFFER_SIZE];
-        size_t outLength;
-        if (coap_build(&rstPacket, outBuffer, &outLength, sizeof(outBuffer)) == 0) {
-            sendto(clientArgs->socketFd, outBuffer, outLength, 0, (struct sockaddr*) &clientArgs->clientAddress, clientArgs->clientAddressLength);
-        }
+    coap_packet_t req, resp;
+    int res = coap_parse(args->buffer, args->buffer_len, &req);
+    if (res != 0) {
+        log_text("[ERROR] Paquete inválido (código %d)", res);
+        free(args);
         goto cleanup;
     }
 
@@ -439,32 +390,18 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        // Inicializar estructura para evitar datos basura
-        memset(clientArgs, 0, sizeof(thread_args_t));
-        
-        // Configurar argumentos del thread
-        clientArgs->socketFd = serverSocket;
-        clientArgs->clientAddressLength = sizeof(clientArgs->clientAddress);
-        
-        // Recibir datos del cliente
-        clientArgs->receivedBufferLength = recvfrom(serverSocket, clientArgs->receivedBuffer, MAX_BUFFER_SIZE, 0,
-                                                   (struct sockaddr*) &clientArgs->clientAddress,
-                                                   &clientArgs->clientAddressLength);
+        args->sock = sock;
+        args->client_len = sizeof(args->client_addr);
+        args->buffer_len = recvfrom(sock, args->buffer, MAX_BUF, 0,
+                                    (struct sockaddr*) &args->client_addr,
+                                    &args->client_len);
 
-        if (clientArgs->receivedBufferLength > 0) {
-            // Validar tamaño del buffer para prevenir overflow
-            if (clientArgs->receivedBufferLength > MAX_BUFFER_SIZE) {
-                logServerMessage("[ERROR] Buffer demasiado grande: %zu bytes", clientArgs->receivedBufferLength);
-                free(clientArgs);
-                continue;
-            }
-            
-            // Crear thread para manejar el cliente
-            pthread_t clientThreadId;
-            int threadResult = pthread_create(&clientThreadId, NULL, handleClientThread, clientArgs);
-            if (threadResult != 0) {
-                logServerMessage("[ERROR] Error creando thread de cliente: %s", strerror(threadResult));
-                free(clientArgs);
+        if (args->buffer_len > 0) {
+            pthread_t tid;
+            int result = pthread_create(&tid, NULL, handle_client, args);
+            if (result != 0) {
+                log_text("[ERROR] Error creando thread: %s", strerror(result));
+                free(args);
             } else {
                 pthread_detach(clientThreadId); // Thread se auto-libera al terminar
             }
