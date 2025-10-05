@@ -1,8 +1,10 @@
 #include <stdarg.h>
 #include <time.h>
+#include <pthread.h>
 #include "log.h"
 
 static FILE *logfile = NULL;
+static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int log_init(const char *path) {
     logfile = fopen(path, "a");
@@ -22,6 +24,8 @@ void log_close(void) {
 }
 
 void log_text(const char *fmt, ...) {
+    pthread_mutex_lock(&log_mutex);
+    
     va_list args1, args2;
     va_start(args1, fmt);
     va_copy(args2, args1);
@@ -35,6 +39,7 @@ void log_text(const char *fmt, ...) {
     printf("[%s] ", ts);
     vprintf(fmt, args1);
     printf("\n");
+    fflush(stdout);
 
     // archivo
     if (logfile) {
@@ -46,4 +51,6 @@ void log_text(const char *fmt, ...) {
 
     va_end(args1);
     va_end(args2);
+    
+    pthread_mutex_unlock(&log_mutex);
 }

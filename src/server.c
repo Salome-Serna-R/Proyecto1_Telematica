@@ -7,7 +7,8 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 #include <time.h>
-//#include <errno.h>
+#include <errno.h>
+#include <signal.h>
 
 #include "storage.h"
 #include "coap_packet.h"
@@ -15,6 +16,11 @@
 
 #define SERVER_PORT 5683 // Puerto por defecto de CoAP
 #define MAX_BUF 1500
+#define MAX_THREADS 100 // Límite de threads concurrentes
+#define THREAD_TIMEOUT 30 // Timeout en segundos para threads
+
+static int active_threads = 0;
+static pthread_mutex_t thread_count_mutex = PTHREAD_MUTEX_INITIALIZER;
 FILE *logfile = NULL;
 
 // Estructura para pasar datos al thread
@@ -52,13 +58,20 @@ void message_log(const char *fmt, ...) {
     va_end(args);
 }
 
-// Conseguir ID de option
+// Conseguir ID de option - Con validación de memoria
 int coap_get_uri_id(const coap_packet_t *pkt) {
+    if (!pkt) return -1;
+    
+    // Verificar que el paquete tenga la estructura correcta
+    if (pkt->options_count <= 0 || pkt->options_count > 16) {
+        return -1;
+    }
+    
     for (int i = 0; i < pkt->options_count; i++) {
         if (pkt->options[i].number == 11) { // Uri-Path
-            // revisar si es número
-            char buf[32];
-            if (pkt->options[i].length < sizeof(buf)) {
+            // Validar longitud antes de copiar
+            if (pkt->options[i].length > 0 && pkt->options[i].length < 32) {
+                char buf[32];
                 memcpy(buf, pkt->options[i].value, pkt->options[i].length);
                 buf[pkt->options[i].length] = '\0';
                 // intentar parsear como entero
@@ -71,19 +84,29 @@ int coap_get_uri_id(const coap_packet_t *pkt) {
 }
 
 void handle_get(coap_packet_t *request, coap_packet_t *response) {
+    if (!request || !response) return;
+    
     int id = coap_get_uri_id(request);
     if (id < 0) {
+        log_text("[ERROR] GET: ID inválido");
         response->code = COAP_CODE_BAD_REQ;
         return;
     }
 
     char value[128];
-    if (storage_get(id, value, sizeof(value)) == 0) {
+    int result = storage_get(id, value, sizeof(value));
+    if (result == 0) {
         response->code = COAP_CODE_CONTENT;
         response->payload = (uint8_t*) value;
         response->payload_len = strlen(value);
+        log_text("[INFO] GET: Datos recuperados para ID %d", id);
+    }
+    else if (result == -2) {
+        log_text("[WARNING] GET: ID %d no encontrado", id);
+        response->code = COAP_CODE_BAD_REQ;
     }
     else {
+        log_text("[ERROR] GET: Error interno al recuperar ID %d", id);
         response->code = COAP_CODE_BAD_REQ;
     }
 
@@ -96,14 +119,39 @@ void handle_get(coap_packet_t *request, coap_packet_t *response) {
 
 
 void handle_post(coap_packet_t *request, coap_packet_t *response) {
+    if (!request || !response) return;
+    
     if (request->payload && request->payload_len > 0) {
+        // Validar tamaño del payload
+        if (request->payload_len > 100) {
+            log_text("[ERROR] POST: Payload demasiado grande (%zu bytes)", request->payload_len);
+            response->code = COAP_CODE_BAD_REQ;
+            return;
+        }
+        
         char buf[128];
-        snprintf(buf, sizeof(buf), "%.*s", (int)request->payload_len, request->payload);
-        storage_add(buf);
+        int len = snprintf(buf, sizeof(buf), "%.*s", (int)request->payload_len, request->payload);
+        if (len >= sizeof(buf)) {
+            log_text("[ERROR] POST: Buffer overflow en payload");
+            response->code = COAP_CODE_BAD_REQ;
+            return;
+        }
+        
+        int result = storage_add(buf);
+        if (result == 0) {
+            log_text("[INFO] POST: Datos agregados exitosamente");
+            response->code = COAP_CODE_CREATED;
+        } else {
+            log_text("[ERROR] POST: Error al agregar datos");
+            response->code = COAP_CODE_BAD_REQ;
+        }
+    } else {
+        log_text("[ERROR] POST: Payload vacío");
+        response->code = COAP_CODE_BAD_REQ;
     }
+    
     response->ver = 1;
     response->type = COAP_TYPE_ACK;
-    response->code = COAP_CODE_CREATED;
     response->message_id = request->message_id;
     response->token_len = request->token_len;
     memcpy(response->token, request->token, request->token_len);
@@ -111,19 +159,32 @@ void handle_post(coap_packet_t *request, coap_packet_t *response) {
     response->payload_len = 0;
 }
 
-// Usa hilos para manejar multiples clientes
+// Usa hilos para manejar multiples clientes - Thread-safe con límites
 void *handle_client(void *arg) {
     thread_args_t *args = (thread_args_t*) arg;
-
-    coap_packet_t req, resp;
-    int res = coap_parse(args->buffer, args->buffer_len, &req);
-    if (res != 0) {
-        log_text("[ERROR] Paquete inválido (código %d)\n", res);
-        free(args);
+    
+    if (!args) {
+        log_text("[ERROR] Argumentos de thread nulos");
         return NULL;
     }
+    
+    // Incrementar contador de threads activos
+    pthread_mutex_lock(&thread_count_mutex);
+    active_threads++;
+    pthread_mutex_unlock(&thread_count_mutex);
 
-    log_text("[INFO] Mensaje recibido: Ver=%d Type=%d Code=%d MID=0x%04X\n",
+    // Inicializar estructuras de paquetes
+    coap_packet_t req, resp;
+    memset(&req, 0, sizeof(coap_packet_t));
+    memset(&resp, 0, sizeof(coap_packet_t));
+    
+    int res = coap_parse(args->buffer, args->buffer_len, &req);
+    if (res != 0) {
+        log_text("[ERROR] Paquete inválido (código %d)", res);
+        goto cleanup;
+    }
+
+    log_text("[INFO] Mensaje recibido: Ver=%d Type=%d Code=%d MID=0x%04X",
            req.ver, req.type, req.code, req.message_id);
 
     int uriId = 0; // Inicializar variable del Uri_ID del mensaje
@@ -146,7 +207,7 @@ void *handle_client(void *arg) {
                 snprintf(buf, sizeof(buf), "%.*s", (int)req.payload_len, req.payload);
                 if (storage_update(uriId, buf) == 0) {
                     resp.code = COAP_CODE_CHANGED;
-                    log_text("[INFO] PUT recibido\n");
+                    log_text("[INFO] PUT recibido");
                 }
                 else {
                     resp.code = COAP_CODE_BAD_REQ;
@@ -200,10 +261,21 @@ void *handle_client(void *arg) {
     uint8_t out[MAX_BUF];
     size_t out_len;
     if (coap_build(&resp, out, &out_len, sizeof(out)) == 0) {
-        sendto(args->sock, out, out_len, 0,
+        ssize_t sent = sendto(args->sock, out, out_len, 0,
                (struct sockaddr*) &args->client_addr, args->client_len);
+        if (sent < 0) {
+            log_text("[ERROR] Error enviando respuesta: %s", strerror(errno));
+        }
+    } else {
+        log_text("[ERROR] Error serializando respuesta CoAP");
     }
 
+cleanup:
+    // Decrementar contador de threads activos
+    pthread_mutex_lock(&thread_count_mutex);
+    active_threads--;
+    pthread_mutex_unlock(&thread_count_mutex);
+    
     free(args);
     return NULL;
 }
@@ -251,9 +323,25 @@ int main(int argc, char *argv[]) {
     log_text("Servidor CoAP escuchando en el puerto %d, creando log en %s", port, logpath);
 
     while (1) {
-        thread_args_t *args = malloc(sizeof(thread_args_t));
-        if (!args) continue;
+        // Verificar límite de threads
+        pthread_mutex_lock(&thread_count_mutex);
+        if (active_threads >= MAX_THREADS) {
+            pthread_mutex_unlock(&thread_count_mutex);
+            log_text("[WARNING] Límite de threads alcanzado (%d), esperando...", MAX_THREADS);
+            sleep(1);
+            continue;
+        }
+        pthread_mutex_unlock(&thread_count_mutex);
 
+        thread_args_t *args = malloc(sizeof(thread_args_t));
+        if (!args) {
+            log_text("[ERROR] Error asignando memoria para thread");
+            continue;
+        }
+
+        // Inicializar estructura para evitar datos basura
+        memset(args, 0, sizeof(thread_args_t));
+        
         args->sock = sock;
         args->client_len = sizeof(args->client_addr);
         args->buffer_len = recvfrom(sock, args->buffer, MAX_BUF, 0,
@@ -261,11 +349,26 @@ int main(int argc, char *argv[]) {
                                     &args->client_len);
 
         if (args->buffer_len > 0) {
+            // Validar tamaño del buffer para prevenir overflow
+            if (args->buffer_len > MAX_BUF) {
+                log_text("[ERROR] Buffer demasiado grande: %zu bytes", args->buffer_len);
+                free(args);
+                continue;
+            }
+            
             pthread_t tid;
-            pthread_create(&tid, NULL, handle_client, args);
-            pthread_detach(tid); // liberar thread al terminar
-        }
-        else {
+            int result = pthread_create(&tid, NULL, handle_client, args);
+            if (result != 0) {
+                log_text("[ERROR] Error creando thread: %s", strerror(result));
+                free(args);
+            } else {
+                pthread_detach(tid); // liberar thread al terminar
+            }
+        } else if (args->buffer_len < 0) {
+            log_text("[ERROR] Error recibiendo datos: %s", strerror(errno));
+            free(args);
+        } else {
+            // buffer_len == 0, conexión cerrada
             free(args);
         }
     }
