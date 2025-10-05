@@ -132,7 +132,7 @@ int storage_add(const char *value) {
         }
         strcpy(temp_data, data);
         temp_data[data_len-2] = '\0'; // quitar ']' de la copia
-        snprintf(new_data, new_len, "%s,%s]", temp_data, entry);
+        snprintf(new_data, new_len, "%s},%s]", temp_data, entry);
         free(temp_data);
     }
 
