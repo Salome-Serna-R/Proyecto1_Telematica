@@ -102,7 +102,7 @@ void handle_get(coap_packet_t *request, coap_packet_t *response) {
     }
 
     response->ver = 1;
-    response->type = COAP_TYPE_ACK;
+    response->type = (request->type == COAP_TYPE_NON) ? COAP_TYPE_NON : COAP_TYPE_ACK;
     response->message_id = request->message_id;
     response->token_len = request->token_len;
     memcpy(response->token, request->token, request->token_len);
@@ -140,7 +140,7 @@ void handle_post(coap_packet_t *request, coap_packet_t *response) {
     }
 
     response->ver = 1;
-    response->type = COAP_TYPE_ACK;
+    response->type = (request->type == COAP_TYPE_NON) ? COAP_TYPE_NON : COAP_TYPE_ACK;
     response->message_id = request->message_id;
     response->token_len = request->token_len;
     memcpy(response->token, request->token, request->token_len);
@@ -165,10 +165,25 @@ void *handle_client(void *arg) {
     memset(&resp, 0, sizeof(coap_packet_t));
 
     int res = coap_parse(args->buffer, args->buffer_len, &req);
-    if (res != 0) {
-        log_text("[ERROR] Paquete inválido (código %d)", res);
-        goto cleanup;
+if (res != 0 || !coap_validate(&req)) {
+    log_text("[ERROR] Paquete inválido, respondiendo con RST");
+
+    coap_packet_t rst;
+    memset(&rst, 0, sizeof(coap_packet_t));
+    rst.ver = 1;
+    rst.type = COAP_TYPE_RST;
+    rst.code = COAP_CODE_EMPTY;
+    rst.message_id = req.message_id; // eco del MID recibido
+
+    uint8_t out[MAX_BUF];
+    size_t out_len;
+    if (coap_build(&rst, out, &out_len, sizeof(out)) == 0) {
+        sendto(args->sock, out, out_len, 0,
+               (struct sockaddr*) &args->client_addr, args->client_len);
     }
+    goto cleanup;
+}
+
 
     log_text("[INFO] Mensaje recibido: Ver=%d Type=%d Code=%d MID=0x%04X",
              req.ver, req.type, req.code, req.message_id);
@@ -201,7 +216,7 @@ void *handle_client(void *arg) {
                 resp.code = COAP_CODE_BAD_REQ;
             }
             resp.ver = 1;
-            resp.type = COAP_TYPE_ACK;
+            resp.type = (req.type == COAP_TYPE_NON) ? COAP_TYPE_NON : COAP_TYPE_ACK;
             resp.message_id = req.message_id;
             resp.token_len = req.token_len;
             memcpy(resp.token, req.token, req.token_len);
@@ -220,7 +235,7 @@ void *handle_client(void *arg) {
                 resp.code = COAP_CODE_BAD_REQ;
             }
             resp.ver = 1;
-            resp.type = COAP_TYPE_ACK;
+            resp.type = (req.type == COAP_TYPE_NON) ? COAP_TYPE_NON : COAP_TYPE_ACK;
             resp.message_id = req.message_id;
             resp.token_len = req.token_len;
             memcpy(resp.token, req.token, req.token_len);
@@ -229,7 +244,7 @@ void *handle_client(void *arg) {
             break;
         default:
             resp.ver = 1;
-            resp.type = COAP_TYPE_ACK;
+            resp.type = (req.type == COAP_TYPE_NON) ? COAP_TYPE_NON : COAP_TYPE_ACK;
             resp.code = COAP_CODE_BAD_REQ;
             resp.message_id = req.message_id;
             resp.token_len = req.token_len;
