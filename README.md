@@ -66,8 +66,23 @@ Google Drive con diagramas y referencias: https://drive.google.com/drive/folders
 
 El video de sustentación se puede encontrar aquí: https://eafit-my.sharepoint.com/personal/ssernar2_eafit_edu_co/_layouts/15/stream.aspx?id=%2Fpersonal%2Fssernar2_eafit_edu_co%2FDocuments%2FGrabaciones%2FCall%20with%20Laura%20and%201%20other-20251005_194805-Meeting%20Recording%2FExports%2FVideoSustentacion_Telematica.mp4&ga=1&referrerScenario=AddressBarCopied.view.48812842-61dd-4ed8-b889-67825fa161f7&isDarkMode=true 
 
-RFC de CoAP: https://datatracker.ietf.org/doc/html/rfc7252 
+Documentación en un documento aparte: https://docs.google.com/document/d/1nH8_rdsfjw0_gweKtVAswcOULd1cWyM5fpEY125MQsw/edit?usp=sharing 
 
-Documentación en un documento más presentable: https://docs.google.com/document/d/1nH8_rdsfjw0_gweKtVAswcOULd1cWyM5fpEY125MQsw/edit?usp=sharing 
+[1] Z. Shelby, K. Hartke, and C. Bormann, “The Constrained Application Protocol (CoAP),” RFC 7252, IETF, 2014. [Online]. Available: https://datatracker.ietf.org/doc/html/rfc7252 
 
-Y, por supuesto, la clase de Internet: Arquitecturas y Protocolos de la Universidad EAFIT
+[2] B. B. Hall, “Beej’s guide to c programming,” https://beej.us/guide/ bgc/, 2025. 
+
+[3] ——, “Beej’s guide to network programming,” https://beej.us/guide/ bgnet/, 2025. 
+
+[4] GeeksforGeeks, “Tcp server-client implementation in c,” https://www. geeksforgeeks.org/tcp-server-client-implementation-in-c/, 2025. 
+
+[5] CodeMagic LTD, “Wokwi: Online electronics simulator for embedded and iot systems,” https://wokwi.com/, 2019–2025.
+
+[6] Documentación de Sockets en C (Linux), 2025.
+[7] Clase de Telemática, J.M, Universidad EAFIT, 2025.
+[8] Wokwi - World’s most advanced ESP32 Simulator. (s. f.). https://wokwi.com/
+
+[9] COAP – Constrained Application Protocol – Radiocrafts. (s. f.). https://radiocrafts.com/technologies/coap-constrained-application-protocol/#:~:text=compatibles%20con%20CoAP-,%C2%BFQu%C3%A9%20es%20CoAP?,la%20RFC%207252%20del%20IETF
+
+[10] GeeksforGeeks. (2025, 7 agosto). Socket Programming in GeeksforGeeks https://www.geeksforgeeks.org/c/socket-programming-cc/
+
