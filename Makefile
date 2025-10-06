@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -O2 -g
 LDFLAGS = -lpthread
 
-SRC = server.c coap_packet.c storage.c
+SRC = server.c coap_packet.c storage.c log.c
 OBJ = $(SRC:.c=.o)
 
 server: $(OBJ)
@@ -17,6 +17,9 @@ storage.o: src/storage.c include/storage.h
 
 server.o: src/server.c
 	$(CC) $(CFLAGS) -c server.o src/server.c
+
+log.o: src/log.c include/log.h
+	$(CC) $(CFLAGS) -c log.o src/log.c
 
 clean:
 	rm -f *.o

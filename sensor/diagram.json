@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "author": "Anonymous maker",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-breadboard-mini", "id": "bb1", "top": 17.8, "left": -31.2, "attrs": {} },
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 153.6, "left": 14.44, "attrs": {} },
+    {
+      "type": "wokwi-dht22",
+      "id": "dht1",
+      "top": -143.7,
+      "left": 33,
+      "attrs": { "temperature": "37" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": -15.25,
+      "left": 0,
+      "attrs": { "value": "1000" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "esp:GND.3", "dht1:GND", "black", [ "h33.64", "v-96" ] ],
+    [ "r1:2", "dht1:SDA", "green", [ "v0" ] ],
+    [ "dht1:VCC", "bb1:1b.f", "red", [ "v0", "h-67.2" ] ],
+    [ "bb1:1b.j", "esp:5V", "red", [ "v0" ] ],
+    [ "r1:1", "bb1:1t.c", "green", [ "v0" ] ],
+    [ "esp:15", "r1:2", "green", [ "v0", "h67.2", "v-336" ] ]
+  ],
+  "dependencies": {}
+}
