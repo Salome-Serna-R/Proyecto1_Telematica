@@ -40,6 +40,12 @@ Ejemplo GET: `python client.py 127.0.0.1 GET data/1`
 
 Ejemplo PUT: `python client.py 127.0.0.1 PUT data/1 "25"`
 
+Adicionalmente, es posible mandar una petición con código NON al servidor de la forma:
+
+`python client.py <IP Servidor> <GET|PUT|DELETE> <uri> [payload] --non`
+
+Ejemplo: `python client.py 127.0.0.1 GET data/1 --non`
+
 En la carpeta sensor se encuentra el .ino que se debe cargar en el ESP32, adicional de un archivo json que recrea las conexiones en Wokwi de forma rápida.
 
 ## Conclusiones
