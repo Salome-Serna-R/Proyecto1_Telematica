@@ -69,3 +69,5 @@ El video de sustentación se puede encontrar aquí: https://eafit-my.sharepoint.
 RFC de CoAP: https://datatracker.ietf.org/doc/html/rfc7252 
 
 Documentación en un documento más presentable: https://docs.google.com/document/d/1nH8_rdsfjw0_gweKtVAswcOULd1cWyM5fpEY125MQsw/edit?usp=sharing 
+
+Y, por supuesto, la clase de Internet: Arquitecturas y Protocolos de la Universidad EAFIT
